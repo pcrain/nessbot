@@ -1,0 +1,406 @@
+#!/usr/bin/python
+
+import re, sys, binascii, struct, time, signal, math
+import random, bisect, collections
+import os, curses, shutil
+from curses import wrapper
+from evdev import InputDevice, categorize, ecodes, UInput
+from enum import Enum
+
+# PUNISHR = 0.99
+# PUNISHR = 0.5
+# LEARNR = 1 / PUNISHR
+
+(TERMCOLS,TERMROWS) = shutil.get_terminal_size((80, 20))
+
+OUTHIST = 100000
+MIDLAYERS = 1
+LEARNR = 0.01
+# LEARNR = 1.0
+MUTRATE = 0.01
+
+MIDSIZE = [100 for i in range(0,MIDLAYERS)]
+PUNISHR = -LEARNR
+
+CHUNKSIZE = 4
+RAMOFFSET = int("2500000000",16)
+
+PLAYERENTITY = [
+  int("80453080",16), #Player 1
+  int("80453F10",16), #Player 2
+  int("80454DA0",16), #Player 3
+  int("80455C30",16), #Player 4
+]
+
+GTADDRESS = RAMOFFSET + int("80479D60",16)
+
+BYTEOFFSET = [
+  # ["P1 State","int",  [PLAYERENTITY[0] + int("B0",16), int("2C",16), int("10",16),]],
+  ["P1 X    ","float",[PLAYERENTITY[0] + int("B0",16), int("2C",16), int("B0",16),]],
+  ["P1 Y    ","float",[PLAYERENTITY[0] + int("B0",16), int("2C",16), int("B4",16),]],
+  # ["P1 INPUT","bits", [int("0x804C1FAC",16)]],
+]
+
+Outputs = [
+  "neutral",
+  "left",
+  "right",
+  "jump",
+  "crouch",
+]
+
+_done = False
+_lastfitness = 0
+_lastdelta = 0
+_lastdd = 0
+_first = True
+_currow = 0
+_curcol = 0
+
+_outputs = [-1 for i in range(0,OUTHIST)]
+_outweights = [-1 for i in range(0,OUTHIST)]
+_outcount = [[0,0,0] for i in range(0,len(Outputs))] #Good,neutral,poor
+_outindex = 0
+
+
+class col:
+  BLN      ='\033[0m'            # Blank
+  UND      ='\033[1;4m'          # Underlined
+  INV      ='\033[1;7m'          # Inverted
+  CRT      ='\033[1;41m'         # Critical
+  BLK      ='\033[1;30m'         # Black
+  RED      ='\033[1;31m'         # Red
+  GRN      ='\033[1;32m'         # Green
+  YLW      ='\033[1;33m'         # Yellow
+  BLU      ='\033[1;34m'         # Blue
+  MGN      ='\033[1;35m'         # Magenta
+  CYN      ='\033[1;36m'         # Cyan
+  WHT      ='\033[1;37m'         # White
+  BLK=0   # Black
+  RED=1   # Red
+  GRN=2   # Green
+  YLW=3   # Yellow
+  BLU=4   # Blue
+  MGN=5   # Magenta
+  CYN=6   # Cyan
+  WHT=7   # White
+
+def signal_handler(signal, frame):
+  global _done, device
+  device.write(ecodes.EV_ABS, ecodes.ABS_X, 136)  # KEY_A up
+  device.write(ecodes.EV_SYN, ecodes.SYN_REPORT, 1)  # KEY_A up
+  device.close()
+  _done = True
+
+def sign(x):
+  if x > 0:
+    return 1.0
+  elif x < 0:
+    return -1.0
+  return 0.0
+
+def neural_init():
+  global nn_values, nn_outputs, nn_weights, nn_olen
+  nn_olen = len(Outputs)
+  nn_values = [0.0 for i in range(0,2)]
+  nn_outputs = [1/nn_olen for i in range(0,nn_olen)]
+  nn_weights = []
+  for i in range(0,MIDLAYERS+1):
+    x = []
+    for j in range(0,len(nn_values) if (i == 0) else MIDSIZE[i-1]):
+      for k in range(0,MIDSIZE[i] if (i < MIDLAYERS) else nn_olen):
+        x.append([j,random.random(),k])
+    nn_weights.append(x)
+
+def populate_inputs(inputs):
+  xpos = float(inputs[0])
+  ypos = float(inputs[1])
+  return [
+    xpos/200, #Distance to center
+    # sign(xpos),    #Side of the stage
+    ypos/200, #Distance to center
+  ]
+
+def compute_fitness(inputs):
+  return abs(float(inputs[0]))+abs(float(inputs[1]))
+
+def neural_decide(inputs):
+  global nn_values
+  nn_values = [populate_inputs(inputs)]
+
+  for n in range(0,MIDLAYERS+1):
+    outputs = [0 for i in range(0,nn_olen if (n == MIDLAYERS) else MIDSIZE[n])]
+    # curprint("LAYER "+str(n))
+    for po in nn_weights[n]:
+      # curprint("  "+str(po))
+      oval = nn_values[n][po[0]]*po[1]
+      outputs[po[2]] += oval
+    nn_values.append([math.tanh(o) for o in outputs])
+
+  # curprint(nn_values)
+
+  first = True
+  for i in outputs:
+    if first:
+      first = False
+      omin = i
+      omax = i
+    elif i < omin: omin = i
+    elif i > omax: omax = i
+
+  #Return if absolutely no preference
+  # curprint(outputs,col.WHT)
+  if omax == omin:
+    return random.randint(0,nn_olen-1)
+  #Normalize to positive numbers
+  osum = 0
+  for i in range(0,len(outputs)):
+    # outputs[i] = ((outputs[i]-omin)/(omax-omin)+1)/2
+    # outputs[i] -= (omin)
+    outputs[i] -= (omin-MUTRATE)
+    osum += outputs[i]
+
+  #Make sure the weights sum to 1
+  for i in range(0,len(outputs)):
+    outputs[i] /= osum
+  #Update input/output list with new values
+  nn_values[-1] = outputs
+
+  #Pick the best choice
+  best = 0
+  bval = outputs[0]
+  for i in range(1,len(outputs)):
+    if outputs[i] > bval:
+      best = i
+      bval = outputs[i]
+  return best
+
+  #Pick something according to probability distribution
+  ran = random.random()
+  for i in range(0,len(outputs)):
+    ran -= outputs[i]
+    if ran <= 0:
+      return i
+
+def neural_normalize():
+  global nn_weights
+  #Make sure all weights per layer are between -1 to 1
+  for i in range(0,MIDLAYERS+1):
+    length = (nn_olen if (i == MIDLAYERS) else MIDSIZE[i])
+
+    minval = nn_weights[i][0][1]
+    maxval = nn_weights[i][0][1]
+    for j in range(1,length):
+      v = nn_weights[i][j][1]
+      if v < minval:
+        minval = v
+      elif v > maxval:
+        maxval = v
+    for j in range(0,length):
+      nn_weights[i][0][1] = (nn_weights[i][0][1]-minval) / (maxval-minval)
+    # curprint(nn_weights)
+
+def neural_update_layer_old(li,output,fc):
+  global nn_weights, nn_values
+  for i in range (0,len(nn_weights[li])):
+    if nn_weights[li][i][2] == output:
+      # if  nn_values[0][nn_weights[li][i][0]] > 0: #TODO: Is this even right
+      if nn_values[li][nn_weights[li][i][0]] > 0: #TODO: Is this even right
+        nn_weights[li][i][1] += fc
+      else:
+        nn_weights[li][i][1] -= fc
+      if li > 0:
+        neural_update_layer(li-1,output,fc)
+
+def activation(x):
+  drv = math.tanh(x)
+  return (1 - drv*drv)
+
+def neural_update_layer(li,output,learnrate,target = 0):
+  # nn_weights[li] = weights between layer li and li + 1 (0 = input layer)
+  # nn_values[li]  = values of nodes at layer li (0 = input layer)
+
+  oval = nn_values[li][output] #Value of output node
+
+  for i in range (0,len(nn_weights[li-1])): #For every weight coming into this layer
+    if nn_weights[li-1][i][2] == output: #If the output node is the specified output node
+      pi = nn_weights[li-1][i][0] #Index of previous node
+      wdelta = learnrate*nn_values[li-1][pi]*activation(oval)
+      if li > MIDLAYERS:
+        wdelta *= (target-oval)
+      else:
+        dsum = 0
+        for obw in nn_weights[li]:
+          if obw[0] == output:
+            nval = nn_values[li+1][obw[2]]
+            dsum += (obw[1]*(target-nval)*activation(nval))
+        wdelta *= dsum
+      nn_weights[li-1][i][1] += wdelta #Update incoming weight
+      if li > 1:
+        neural_update_layer(li-1,pi,learnrate,target) #Update previous layer matching input to this layer
+
+def neural_update(inputs,output):
+  global _lastfitness, _lastdelta, _lastdd, _first, nn_weights
+  fitness = compute_fitness(inputs)
+  fd = fitness
+
+  if not _first:
+    fd -= _lastfitness
+    dd = fd - _lastdelta
+    # curprint(col.CYN + str(fd) + col.BLN)
+    # curprint("  " + col.CYN + str(dd) + col.BLN)
+    if dd >= 0 and fd >= 0: #If we're not improving and our rate of improvement isn't improving
+      neural_update_layer(MIDLAYERS+1,output,LEARNR,0)
+      _lastdd = -1
+    elif dd < 0 and fd < 0: #If we're improving and our rate of improvement is improving
+      neural_update_layer(MIDLAYERS+1,output,LEARNR,1)
+      _lastdd = 1
+    else:
+      _lastdd = 0
+    # neural_update_layer_old(len(nn_weights)-1,output,fc)
+    # neural_normalize()
+
+  _lastfitness = fitness
+  _lastdelta = fd
+  _first = False
+
+def act(output):
+  global device
+  oname = Outputs[output]
+  if oname == "neutral":
+    # device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 0)
+    device.write(ecodes.EV_ABS, ecodes.ABS_X, 136)
+    device.write(ecodes.EV_ABS, ecodes.ABS_Y, 136)
+    device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 0)
+    device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, 0)
+  if oname == "left":
+    device.write(ecodes.EV_ABS, ecodes.ABS_X, 20)
+    device.write(ecodes.EV_ABS, ecodes.ABS_Y, 136)
+    device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 0)
+    device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, 0)
+  if oname == "right":
+    device.write(ecodes.EV_ABS, ecodes.ABS_X, 235)
+    device.write(ecodes.EV_ABS, ecodes.ABS_Y, 136)
+    device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 0)
+    device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, 0)
+  if oname == "jump":
+    device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 0)
+    device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, 1)
+  if oname == "recover":
+    device.write(ecodes.EV_ABS, ecodes.ABS_X, 136)
+    device.write(ecodes.EV_ABS, ecodes.ABS_Y, 20)
+    device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 1)
+    device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, 0)
+  if oname == "crouch":
+    device.write(ecodes.EV_ABS, ecodes.ABS_Y, 235)
+    device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 0)
+    device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, 0)
+  device.write(ecodes.EV_SYN, ecodes.SYN_REPORT, 1)
+
+def curreset():
+  global _currow, _curcol
+  _currow = 0
+  _curcol = 0
+
+def curprint(string,colorbits,newline=True):
+  global _currow, _curcol, stdscr
+  _screen.refresh()
+  pad.addstr(_currow,_curcol,"")
+  ss = str(string)
+  lss = len(ss)
+  pad.addstr(ss+" "*(TERMCOLS-lss),curses.color_pair(colorbits)+curses.A_BOLD)
+  if newline:
+    _currow += 1
+    _curcol = 0
+  else:
+    _curcol += lss
+
+def printoutputs(output):
+  global device, pad, _screen, _outputs, _outindex, _outcount
+  #Print results of old outputs
+  if _outputs[_outindex] >= 0:
+    _outcount[_outputs[_outindex]][_outweights[_outindex]] -= 1
+  _outputs[_outindex] = output
+  _outweights[_outindex] = 1-_lastdd
+  _outcount[output][1-_lastdd] += 1
+  _outindex += 1
+  if _outindex == OUTHIST:
+    _outindex = 0
+  if _lastdd == 1:
+    curprint(Outputs[output],col.GRN)
+  elif _lastdd == 0:
+    curprint(Outputs[output],col.WHT)
+  else:
+    curprint(Outputs[output],col.RED)
+  for i in range(0,len(_outcount)):
+    curprint("  "+Outputs[i]+" "*(10-len(Outputs[i])),col.WHT,False)
+    curprint(str(_outcount[i][0])+" "*(8-len(str(_outcount[i][0]))),col.GRN,False)
+    curprint(str(_outcount[i][1])+" "*(8-len(str(_outcount[i][1]))),col.WHT,False)
+    curprint(str(_outcount[i][2])+" "*(8-len(str(_outcount[i][2]))),col.RED,False)
+    curprint(str(nn_values[-1][i]),col.YLW if (i == output) else col.BLU)
+
+def main(stdscr=""):
+  global device, pad, _screen, _outputs, _outindex, _outcount
+  _screen = stdscr
+
+  pad = curses.newpad(TERMROWS,TERMCOLS)
+  curses.start_color()
+  curses.use_default_colors()
+  curses.curs_set(0)
+  [curses.init_pair(i, i, -1) for i in range(0, curses.COLORS)]
+
+  device = InputDevice('/dev/input/event14')
+  # curprint(str(device.capabilities(verbose=True)))
+
+  signal.signal(signal.SIGINT, signal_handler)
+  pid = int(sys.argv[1])
+  # sys.stderr.write("PID = %d\n" % pid)
+  lastframe = 0
+  framenum = 0
+  output = -1
+  neural_init()
+  with open("/proc/%d/mem" % pid, 'rb', 0) as mem_file:
+    #Precompute offsets
+    for value in BYTEOFFSET:
+      start = RAMOFFSET
+      chunk = None
+      for bo in value[2]:
+        if chunk:
+          start = RAMOFFSET + int(chunk,16)
+        start += bo
+        mem_file.seek(start)  # seek to region start
+        chunk = mem_file.read(CHUNKSIZE)  # read region contents
+        chunk = binascii.hexlify(chunk).decode('ascii')
+      value[2] = start
+
+    #Memory read loop
+    while not _done:
+      curreset()
+      pad.refresh( 0,0, 0,0,TERMROWS,TERMCOLS)
+
+      chunks = []
+      for value in BYTEOFFSET:
+        start = value[2]
+        mem_file.seek(start)  # seek to region start
+        chunk = mem_file.read(CHUNKSIZE)  # read region contents
+        chunk = binascii.hexlify(chunk).decode('ascii')
+        if (value[1] == "float"):
+          chunk = str(struct.unpack('!f', bytes.fromhex(chunk))[0])
+        chunks.append(chunk)
+        curprint(value[0]+": "+chunk,col.YLW)
+      if output >= 0:
+        neural_update(chunks,output)
+        printoutputs(output)
+
+      output = neural_decide(chunks)
+      act(output)
+      while ((framenum == lastframe) or (framenum == "00000000") or (framenum == "8016baf4")):
+        mem_file.seek(GTADDRESS)
+        framenum = binascii.hexlify(mem_file.read(CHUNKSIZE)).decode('ascii')
+        time.sleep(1/120)
+      # curprint(col.RED+framenum+col.BLN)
+      lastframe = framenum
+
+if __name__ == '__main__': # Execute this code when run from the commandline.
+  if len(sys.argv) > 1:
+    wrapper(main)
