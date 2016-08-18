@@ -15,12 +15,13 @@ from enum import Enum
 
 OUTHIST = 100000
 MIDLAYERS = 1
-LEARNR = 0.01
-# LEARNR = 1.0
-MUTRATE = 0.01
 
-MIDSIZE = [100 for i in range(0,MIDLAYERS)]
-PUNISHR = -LEARNR
+LEARNR = 0.01
+MUTRATE = 0.01
+CHAOSRATE = 0.05
+
+MIDSIZE = [50 for i in range(0,MIDLAYERS)]
+PUNISHR = LEARNR#*1.1
 
 CHUNKSIZE = 4
 RAMOFFSET = int("2500000000",16)
@@ -35,11 +36,18 @@ PLAYERENTITY = [
 GTADDRESS = RAMOFFSET + int("80479D60",16)
 
 BYTEOFFSET = [
-  # ["P1 State","int",  [PLAYERENTITY[0] + int("B0",16), int("2C",16), int("10",16),]],
   ["P1 X    ","float",[PLAYERENTITY[0] + int("B0",16), int("2C",16), int("B0",16),]],
   ["P1 Y    ","float",[PLAYERENTITY[0] + int("B0",16), int("2C",16), int("B4",16),]],
+  ["P1 State","int",  [PLAYERENTITY[0] + int("B0",16), int("2C",16), int("10",16),]],
+  ["P2 X    ","float",[PLAYERENTITY[1] + int("B0",16), int("2C",16), int("B0",16),]],
+  ["P2 Y    ","float",[PLAYERENTITY[1] + int("B0",16), int("2C",16), int("B4",16),]],
+  ["P2 State","int",  [PLAYERENTITY[1] + int("B0",16), int("2C",16), int("10",16),]],
+  ["P1 VX   ","float",[PLAYERENTITY[0] + int("B0",16), int("2C",16), int("C8",16),]],
+  ["P1 VY   ","float",[PLAYERENTITY[0] + int("B0",16), int("2C",16), int("CC",16),]],
   # ["P1 INPUT","bits", [int("0x804C1FAC",16)]],
 ]
+
+STATEADDRESS = 0
 
 Outputs = [
   "neutral",
@@ -47,6 +55,11 @@ Outputs = [
   "right",
   "jump",
   "crouch",
+  # "recover",
+  # "smashleft",
+  # "smashright",
+  # "smashup",
+  # "smashdown",
 ]
 
 _done = False
@@ -56,6 +69,7 @@ _lastdd = 0
 _first = True
 _currow = 0
 _curcol = 0
+_streak = 0
 
 _outputs = [-1 for i in range(0,OUTHIST)]
 _outweights = [-1 for i in range(0,OUTHIST)]
@@ -102,7 +116,7 @@ def sign(x):
 def neural_init():
   global nn_values, nn_outputs, nn_weights, nn_olen
   nn_olen = len(Outputs)
-  nn_values = [0.0 for i in range(0,2)]
+  nn_values = [0.0 for i in range(0,6)]
   nn_outputs = [1/nn_olen for i in range(0,nn_olen)]
   nn_weights = []
   for i in range(0,MIDLAYERS+1):
@@ -112,17 +126,60 @@ def neural_init():
         x.append([j,random.random(),k])
     nn_weights.append(x)
 
-def populate_inputs(inputs):
-  xpos = float(inputs[0])
-  ypos = float(inputs[1])
-  return [
-    xpos/200, #Distance to center
-    # sign(xpos),    #Side of the stage
-    ypos/200, #Distance to center
+def populate_inputs(rawinputs):
+  global p1state
+  semivulnstates = [358,359,362,363]
+
+  xpos = float(rawinputs[0])
+  ypos = float(rawinputs[1])
+  p1state = int(rawinputs[2])
+  oxpos = float(rawinputs[3])
+  oypos = float(rawinputs[4])
+  xv = float(rawinputs[6])
+  yv = float(rawinputs[7])
+
+  inputs = [
+    # "P1 X         ",xpos/200,
+    "P1 X         ",sign(xpos),
+    # "P1 Y         ",ypos/200,
+    "P1 Y         ",(1 if (ypos >= 0) else -1),
+    # "P2-P1 X      ",(oxpos-xpos)/400,
+    "P2-P1 X      ",sign(oxpos-xpos),
+    # "P2-P1 Y      ",(oypos-ypos)/400,
+    "P2-P1 Y      ",sign(oypos-ypos),
+    "P1 Xv        ",(1 if (xv >= 0) else -1),
+    "P1 Static    ",(1 if (xv == 0) else -1),
+    "Helpless     ",(1 if (p1state in semivulnstates) else -1),
+    "Toward P2    ",(1 if (sign(xv) == sign(oxpos-xpos)) else -1),
   ]
 
+  for i in range(0,len(inputs),2):
+    inputs[i+1] = inputs[i+1]/2+0.5
+    curprint(inputs[i] + str(inputs[i+1]),col.MGN)
+  return [(inputs[i+i+1]) for i in range(0,int(len(inputs)/2))]
+  return [(inputs[i+i+1]/2+0.5) for i in range(0,int(len(inputs)/2))]
+
 def compute_fitness(inputs):
-  return abs(float(inputs[0]))+abs(float(inputs[1]))
+  xd = float(inputs[0])/100
+  yd = float(inputs[1])/100
+
+  # centerstagedistance = math.sqrt(xd*xd+yd*yd)
+  centerstagedistance = xd
+
+  oxd = float(inputs[3])/100
+  oyd = float(inputs[4])/100
+
+  opponentdistance = -math.sqrt((xd-oxd)**2+(yd-oyd)**2)
+
+  fitness = (
+    10 * (centerstagedistance**2)+
+    0  * (opponentdistance**2)
+  )
+  curprint("Cost:    " + str(fitness),col.CYN)
+  lfd = fitness - _lastfitness
+  curprint("Change:  " + str(lfd),col.CYN)
+  curprint("ImpRate: " + str(lfd - _lastdelta),col.CYN)
+  return fitness
 
 def neural_decide(inputs):
   global nn_values
@@ -155,8 +212,6 @@ def neural_decide(inputs):
   #Normalize to positive numbers
   osum = 0
   for i in range(0,len(outputs)):
-    # outputs[i] = ((outputs[i]-omin)/(omax-omin)+1)/2
-    # outputs[i] -= (omin)
     outputs[i] -= (omin-MUTRATE)
     osum += outputs[i]
 
@@ -167,13 +222,15 @@ def neural_decide(inputs):
   nn_values[-1] = outputs
 
   #Pick the best choice
-  best = 0
-  bval = outputs[0]
-  for i in range(1,len(outputs)):
-    if outputs[i] > bval:
-      best = i
-      bval = outputs[i]
-  return best
+  if random.random() > CHAOSRATE:
+
+    best = 0
+    bval = outputs[0]
+    for i in range(1,len(outputs)):
+      if outputs[i] > bval:
+        best = i
+        bval = outputs[i]
+    return best
 
   #Pick something according to probability distribution
   ran = random.random()
@@ -240,7 +297,7 @@ def neural_update_layer(li,output,learnrate,target = 0):
         neural_update_layer(li-1,pi,learnrate,target) #Update previous layer matching input to this layer
 
 def neural_update(inputs,output):
-  global _lastfitness, _lastdelta, _lastdd, _first, nn_weights
+  global _lastfitness, _lastdelta, _lastdd, _first, nn_weights, _streak
   fitness = compute_fitness(inputs)
   fd = fitness
 
@@ -249,12 +306,30 @@ def neural_update(inputs,output):
     dd = fd - _lastdelta
     # curprint(col.CYN + str(fd) + col.BLN)
     # curprint("  " + col.CYN + str(dd) + col.BLN)
-    if dd >= 0 and fd >= 0: #If we're not improving and our rate of improvement isn't improving
-      neural_update_layer(MIDLAYERS+1,output,LEARNR,0)
+    if fd >= 0 and dd >= 0: #If we're not improving and our rate of improvement isn't improving
+      # if _lastdd == 1:
+      #   _streak = 1
+      # else:
+      #   _streak += 1
+      # neural_update_layer(MIDLAYERS+1,output,PUNISHR*_streak*(fd+0.01),0)
       _lastdd = -1
-    elif dd < 0 and fd < 0: #If we're improving and our rate of improvement is improving
-      neural_update_layer(MIDLAYERS+1,output,LEARNR,1)
+      neural_update_layer(MIDLAYERS+1,output,PUNISHR*(fd+0.1),0)
+    elif fd < 0 and dd < 0: #If we're improving and our rate of improvement is improving
+      # if _lastdd == -1:
+      #   _streak = 1
+      # else:
+      #   _streak += 1
+      # neural_update_layer(MIDLAYERS+1,output,LEARNR*_streak*fd*(-1),1)
       _lastdd = 1
+      neural_update_layer(MIDLAYERS+1,output,LEARNR*fd*(-1),1)
+    elif fd < 0: #If we're at least improving
+      # if _lastdd == -1:
+      #   _streak = 1
+      # else:
+      #   _streak += 1
+      # neural_update_layer(MIDLAYERS+1,output,LEARNR*_streak*fd*(-1),1)
+      _lastdd = 1
+      neural_update_layer(MIDLAYERS+1,output,LEARNR*fd*(-1),1)
     else:
       _lastdd = 0
     # neural_update_layer_old(len(nn_weights)-1,output,fc)
@@ -267,40 +342,43 @@ def neural_update(inputs,output):
 def act(output):
   global device
   oname = Outputs[output]
+  x = 136; y = 136; w = 0; e = 0; n = 0; s = 0
   if oname == "neutral":
-    # device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 0)
-    device.write(ecodes.EV_ABS, ecodes.ABS_X, 136)
-    device.write(ecodes.EV_ABS, ecodes.ABS_Y, 136)
-    device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 0)
-    device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, 0)
+    pass
   if oname == "left":
-    device.write(ecodes.EV_ABS, ecodes.ABS_X, 20)
-    device.write(ecodes.EV_ABS, ecodes.ABS_Y, 136)
-    device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 0)
-    device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, 0)
+    x = 20
   if oname == "right":
-    device.write(ecodes.EV_ABS, ecodes.ABS_X, 235)
-    device.write(ecodes.EV_ABS, ecodes.ABS_Y, 136)
-    device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 0)
-    device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, 0)
+    x = 235
   if oname == "jump":
-    device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 0)
-    device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, 1)
+    n = 1
   if oname == "recover":
-    device.write(ecodes.EV_ABS, ecodes.ABS_X, 136)
-    device.write(ecodes.EV_ABS, ecodes.ABS_Y, 20)
-    device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 1)
-    device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, 0)
+    w = 1
   if oname == "crouch":
-    device.write(ecodes.EV_ABS, ecodes.ABS_Y, 235)
-    device.write(ecodes.EV_KEY, ecodes.BTN_WEST, 0)
-    device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, 0)
+    y = 235
+  if oname == "smashleft":
+    x = 20
+    s = 1
+  if oname == "smashright":
+    x = 235
+    s = 1
+  if oname == "smashup":
+    y = 20
+    s = 1
+  if oname == "smashdown":
+    y = 235
+    s = 1
+  device.write(ecodes.EV_ABS, ecodes.ABS_X, x)
+  device.write(ecodes.EV_ABS, ecodes.ABS_Y, y)
+  device.write(ecodes.EV_KEY, ecodes.BTN_WEST, w)
+  device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, n)
+  device.write(ecodes.EV_KEY, ecodes.BTN_SOUTH, s)
   device.write(ecodes.EV_SYN, ecodes.SYN_REPORT, 1)
 
 def curreset():
   global _currow, _curcol
   _currow = 0
   _curcol = 0
+  pad.refresh(0,0,0,0,TERMROWS,TERMCOLS)
 
 def curprint(string,colorbits,newline=True):
   global _currow, _curcol, stdscr
@@ -332,75 +410,107 @@ def printoutputs(output):
     curprint(Outputs[output],col.WHT)
   else:
     curprint(Outputs[output],col.RED)
+
+  maxval = nn_values[-1][0]
+  maxi = 0
+  for i in range(1,len(_outcount)):
+    t = nn_values[-1][i]
+    if t > maxval:
+      maxval = t
+      maxi = i
+
   for i in range(0,len(_outcount)):
     curprint("  "+Outputs[i]+" "*(10-len(Outputs[i])),col.WHT,False)
-    curprint(str(_outcount[i][0])+" "*(8-len(str(_outcount[i][0]))),col.GRN,False)
-    curprint(str(_outcount[i][1])+" "*(8-len(str(_outcount[i][1]))),col.WHT,False)
-    curprint(str(_outcount[i][2])+" "*(8-len(str(_outcount[i][2]))),col.RED,False)
-    curprint(str(nn_values[-1][i]),col.YLW if (i == output) else col.BLU)
+    gc = _outcount[i][0]
+    rc = _outcount[i][2]
+    nc = _outcount[i][1] + gc + rc
+    curprint(str(gc)+" "*(8-len(str(gc))),col.GRN,False)
+    curprint(str(nc)+" "*(8-len(str(nc))),col.WHT,False)
+    curprint(str(rc)+" "*(8-len(str(rc))),col.RED,False)
+    curprint(str(nn_values[-1][i]),(col.GRN if (i == maxi) else col.YLW) if (i == output) else col.BLU)
 
-def main(stdscr=""):
-  global device, pad, _screen, _outputs, _outindex, _outcount
-  _screen = stdscr
+def precompute_offsets(mem_file):
+  global STATEADDRESS
+  #Precompute offsets
+  for value in BYTEOFFSET:
+    start = RAMOFFSET
+    chunk = None
+    for bo in value[2]:
+      if chunk:
+        start = RAMOFFSET + int(chunk,16)
+      start += bo
+      mem_file.seek(start)  # seek to region start
+      if start < 160000000000:
+        start = RAMOFFSET #Dummy value
+        break
+      chunk = mem_file.read(CHUNKSIZE)  # read region contents
+      chunk = binascii.hexlify(chunk).decode('ascii')
+    value[2] = start
+    if value[0] == "P1 State":
+      STATEADDRESS = value[2]
 
+def init_curses():
   pad = curses.newpad(TERMROWS,TERMCOLS)
   curses.start_color()
   curses.use_default_colors()
   curses.curs_set(0)
   [curses.init_pair(i, i, -1) for i in range(0, curses.COLORS)]
+  return pad
 
+def main(stdscr=""):
+  global device, pad, _screen, _outputs, _outindex, _outcount, p1state
+  _screen = stdscr
+
+  signal.signal(signal.SIGINT, signal_handler)
+  pad = init_curses()
   device = InputDevice('/dev/input/event14')
   # curprint(str(device.capabilities(verbose=True)))
 
-  signal.signal(signal.SIGINT, signal_handler)
-  pid = int(sys.argv[1])
-  # sys.stderr.write("PID = %d\n" % pid)
-  lastframe = 0
-  framenum = 0
-  output = -1
+  lastframe = 0; framenum = 0; output = -1
   neural_init()
-  with open("/proc/%d/mem" % pid, 'rb', 0) as mem_file:
-    #Precompute offsets
-    for value in BYTEOFFSET:
-      start = RAMOFFSET
-      chunk = None
-      for bo in value[2]:
-        if chunk:
-          start = RAMOFFSET + int(chunk,16)
-        start += bo
-        mem_file.seek(start)  # seek to region start
-        chunk = mem_file.read(CHUNKSIZE)  # read region contents
-        chunk = binascii.hexlify(chunk).decode('ascii')
-      value[2] = start
+  with open("/proc/"+os.popen("pgrep dolphin").read().strip()+"/mem", 'rb', 0) as mem_file:
+    #Precompute memory offsets
+    precompute_offsets(mem_file)
 
     #Memory read loop
     while not _done:
+      #Reset the terminal
       curreset()
-      pad.refresh( 0,0, 0,0,TERMROWS,TERMCOLS)
 
+      #Read raw data from memory
       chunks = []
       for value in BYTEOFFSET:
-        start = value[2]
-        mem_file.seek(start)  # seek to region start
-        chunk = mem_file.read(CHUNKSIZE)  # read region contents
-        chunk = binascii.hexlify(chunk).decode('ascii')
+        mem_file.seek(value[2])  # seek to region start
+        chunk = binascii.hexlify(mem_file.read(CHUNKSIZE)).decode('ascii') # read region contents
         if (value[1] == "float"):
           chunk = str(struct.unpack('!f', bytes.fromhex(chunk))[0])
+        if (value[1] == "int"):
+          chunk = str(struct.unpack('!i', bytes.fromhex(chunk))[0])
         chunks.append(chunk)
-        curprint(value[0]+": "+chunk,col.YLW)
+        # curprint(value[0]+": "+chunk,col.YLW)
+
+      #Evaluate the decision from last frame based on the new state
       if output >= 0:
         neural_update(chunks,output)
         printoutputs(output)
 
+      #Make a decision this frame and act on it
       output = neural_decide(chunks)
       act(output)
+
+      #Wait for an update
       while ((framenum == lastframe) or (framenum == "00000000") or (framenum == "8016baf4")):
         mem_file.seek(GTADDRESS)
         framenum = binascii.hexlify(mem_file.read(CHUNKSIZE)).decode('ascii')
         time.sleep(1/120)
-      # curprint(col.RED+framenum+col.BLN)
       lastframe = framenum
 
+      #Pause I/O while we're helpless
+      while (p1state <= 12) or (p1state > 1000) or (p1state == 341):
+        time.sleep(1/10)
+        mem_file.seek(STATEADDRESS)
+        p1state = binascii.hexlify(mem_file.read(CHUNKSIZE)).decode('ascii')
+        p1state = struct.unpack('!i', bytes.fromhex(p1state))[0]
+
 if __name__ == '__main__': # Execute this code when run from the commandline.
-  if len(sys.argv) > 1:
-    wrapper(main)
+  wrapper(main)
