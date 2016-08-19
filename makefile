@@ -20,7 +20,7 @@ build/memreader.d \
 build/util.d \
 build/main.d
 
-LIBS := -lcurl -ljsoncpp -ljpeg -lpng -lncurses
+LIBS := -ljsoncpp -lncurses
 
 all: nessbot
 
@@ -34,7 +34,7 @@ nessbot: $(OBJS)
 build/%.o: ./src/%.cpp
 	@echo 'Building file: $<'
 	@echo 'Invoking: GCC C++ Compiler'
-	g++ -D__GXX_EXPERIMENTAL_CXX0X__ -I/usr/include/jsoncpp -I/usr/include/qt4 -O0 -g3 -Wall -c -fmessage-length=0 -std=c++11 $(UNUSED) -fopenmp -o "$@" "$<"
+	g++ -D__GXX_EXPERIMENTAL_CXX0X__ -I/usr/include/jsoncpp -O0 -g3 -Wall -c -fmessage-length=0 -std=c++11 $(UNUSED) -fopenmp -o "$@" "$<"
 	@echo 'Finished building: $<'
 	@echo ' '
 

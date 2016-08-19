@@ -39,6 +39,7 @@ private:
   bool firstframe;
 
   precfloat** nn_values;
+  precfloat** nn_errors;
   struct nodeweight** nn_weights;
   unsigned* num_layer_weights;
 
@@ -57,6 +58,7 @@ public:
   precfloat activation(precfloat f);
   input_name neural_decide(std::vector<unsigned long> rawinputs);
   void printoutputs(int output);
+  void compute_layer_error_derivatives(unsigned li, int targetoutput, precfloat targetval);
 };
 
 }

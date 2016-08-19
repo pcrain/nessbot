@@ -26,6 +26,7 @@ namespace nessbot {
   NeuralNetwork::~NeuralNetwork() {
     for (unsigned i = 0; i < num_middle_layers+2; ++i) {
       delete nn_values[i];
+      delete nn_errors[i];
       if (i < num_middle_layers+1) {
         delete nn_weights[i];
       }
@@ -54,6 +55,7 @@ namespace nessbot {
     }
 
     nn_values = new precfloat* [num_middle_layers+2];
+    nn_errors = new precfloat* [num_middle_layers+2];
     nn_weights = new struct nodeweight* [num_middle_layers+1];
     num_layer_weights = new unsigned [num_middle_layers+1];
 
@@ -61,24 +63,26 @@ namespace nessbot {
       unsigned jmax = ((i == 0) ? NUM_INPUTS : middle_layer_size);
       unsigned kmax = ((i < num_middle_layers) ? middle_layer_size : inname_end);
       nn_values[i] = new precfloat[jmax];
+      nn_errors[i] = new precfloat[jmax];
       for (unsigned j = 0; j < jmax; ++j) {
         nn_values[i][j] = 0;
+        nn_errors[i][j] = 0;
       }
       nn_weights[i] = new nodeweight[jmax*kmax];
       unsigned counter = 0;
       for (unsigned j = 0; j < jmax; ++j) {
         for (unsigned k = 0; k < kmax; ++k) {
           nn_weights[i][counter] = {j,rand() / (precfloat)RAND_MAX,k};
-          // curprint("%f\n",nn_weights[i][counter].w); refresh(); fsleep(1); clear();
           ++counter;
         }
       }
       num_layer_weights[i] = counter;
-      // curprint(RED,"%u\n",counter); refresh(); fsleep(10);
     }
     nn_values[num_middle_layers+1] = new precfloat[inname_end];
+    nn_errors[num_middle_layers+1] = new precfloat[inname_end];
     for (unsigned i = 0; i < inname_end; ++i) {
       nn_values[num_middle_layers+1][i] = 0;
+      nn_errors[num_middle_layers+1][i] = 0;
     }
   }
 
@@ -118,39 +122,77 @@ namespace nessbot {
     // nn_weights[li] = weights between layer li and li + 1 (0 = input layer)
     // nn_values[li]  = values of nodes at layer li (0 = input layer)
 
-    unsigned ulast = lastoutput; //To avoid sign-compare warning
-    precfloat oval = nn_values[li][ulast]; //Value of output node
+    compute_layer_error_derivatives(li,lastoutput,target);
 
     for (unsigned i = 0; i < num_layer_weights[li-1]; ++i) { //For every weight coming into this layer
-      if (nn_weights[li-1][i].b == ulast) { //If the output node is the specified output node
-        unsigned pi = nn_weights[li-1][i].a; //Index of previous node
-        precfloat wdelta = lr*nn_values[li-1][pi]*activation(oval);
-        if (li > num_middle_layers) {
-          wdelta *= (target-oval);
-        }
-        else {
-          precfloat dsum = 0.0f;
-          for (unsigned j = 0; j < num_layer_weights[li]; ++j) { //For every weight coming into this layer
-            if (nn_weights[li][j].a == ulast) {
-              precfloat nval = nn_values[li+1][nn_weights[li][j].b];
-              dsum += (nn_weights[li][j].w*(target-nval)*activation(nval));
-            }
-          }
-          wdelta *= dsum;
-          // curprint(RED,"%f,",wdelta);
-        }
-        // if (wdelta != 0)
-        //   curprint(RED,"%f,",nn_weights[li-1][i].w);
-        nn_weights[li-1][i].w += wdelta; //Update incoming weight
-        // if (wdelta != 0)
-        //   curprint(GRN,"%f,",nn_weights[li-1][i].w);
-        if (li > 1) {
-          // curprint(RED,"%f,",nn_weights[li-1][i].w);
-          neural_update_layer(li-1,pi,lr,target); //Update previous layer matching input to this layer
-        }
-      }
+      unsigned a = nn_weights[li-1][i].a;
+      unsigned b = nn_weights[li-1][i].b;
+      precfloat weightdelta = nn_values[li-1][a]*lr*nn_errors[li][b];
+      nn_weights[li-1][i].w += weightdelta;
+    }
+
+    if (li > 1) {
+      neural_update_layer(li-1,lastoutput,lr,target); //Update previous layer matching input to this layer
     }
   }
+
+  //li = layer index
+  //targetoutput = the value we want to modify
+  //targetval = the target value for targetoutput
+  void NeuralNetwork::compute_layer_error_derivatives(unsigned li, int targetoutput, precfloat targetval) {
+    if (li == num_middle_layers+1) {
+      for (int i = 0; i < inname_end; ++i) {
+        nn_errors[li][i] = ((i == targetoutput) ? (targetval - nn_values[li][i]) : 0);
+        nn_errors[li][i] *= activation(nn_values[li][i]);
+      }
+      return;
+    }
+
+    unsigned cursize = ( (li == 0) ? NUM_INPUTS : middle_layer_size);
+    unsigned upsize = ( (li == num_middle_layers) ? inname_end : middle_layer_size);
+    unsigned n = 0;
+
+    for (unsigned i = 0; i < cursize; ++i) {
+      precfloat errorsum = 0;
+      for (unsigned j = 0; j < upsize; ++j) {
+        errorsum += nn_weights[li][n].w*nn_errors[li+1][j];
+        ++n;
+      }
+      nn_errors[li][i] = errorsum*activation(nn_values[li][i]);
+    }
+  }
+
+  // void NeuralNetwork::neural_update_layer(unsigned li, int lastoutput, precfloat lr, precfloat target = 0) {
+  //   // nn_weights[li] = weights between layer li and li + 1 (0 = input layer)
+  //   // nn_values[li]  = values of nodes at layer li (0 = input layer)
+
+  //   unsigned ulast = lastoutput; //To avoid sign-compare warning
+  //   precfloat oval = nn_values[li][ulast]; //Value of output node
+
+  //   for (unsigned i = 0; i < num_layer_weights[li-1]; ++i) { //For every weight coming into this layer
+  //     if (nn_weights[li-1][i].b == ulast) { //If the output node is the specified output node
+  //       unsigned pi = nn_weights[li-1][i].a; //Index of previous node
+  //       precfloat wdelta = lr*nn_values[li-1][pi]*activation(oval);
+  //       if (li > num_middle_layers) {
+  //         wdelta *= (target-oval);
+  //       }
+  //       else {
+  //         precfloat dsum = 0.0f;
+  //         for (unsigned j = 0; j < num_layer_weights[li]; ++j) { //For every weight coming into this layer
+  //           if (nn_weights[li][j].a == ulast) {
+  //             precfloat nval = nn_values[li+1][nn_weights[li][j].b];
+  //             dsum += (nn_weights[li][j].w*(target-nval)*activation(nval));
+  //           }
+  //         }
+  //         wdelta *= dsum;
+  //       }
+  //       nn_weights[li-1][i].w += wdelta; //Update incoming weight
+  //       if (li > 1) {
+  //         neural_update_layer(li-1,pi,lr,target); //Update previous layer matching input to this layer
+  //       }
+  //     }
+  //   }
+  // }
 
   precfloat NeuralNetwork::compute_fitness(std::vector<unsigned long> inputs) {
     precfloat xd = hexfloat(inputs[0])/100;
