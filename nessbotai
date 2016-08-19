@@ -7,10 +7,6 @@ from curses import wrapper
 from evdev import InputDevice, categorize, ecodes, UInput
 from enum import Enum
 
-# PUNISHR = 0.99
-# PUNISHR = 0.5
-# LEARNR = 1 / PUNISHR
-
 (TERMCOLS,TERMROWS) = shutil.get_terminal_size((80, 20))
 
 OUTHIST = 100000
@@ -54,7 +50,7 @@ Outputs = [
   "left",
   "right",
   "jump",
-  "crouch",
+  # "crouch",
   # "recover",
   # "smashleft",
   # "smashright",
@@ -114,10 +110,9 @@ def sign(x):
   return 0.0
 
 def neural_init():
-  global nn_values, nn_outputs, nn_weights, nn_olen
+  global nn_values, nn_weights, nn_olen
   nn_olen = len(Outputs)
   nn_values = [0.0 for i in range(0,6)]
-  nn_outputs = [1/nn_olen for i in range(0,nn_olen)]
   nn_weights = []
   for i in range(0,MIDLAYERS+1):
     x = []
@@ -157,7 +152,6 @@ def populate_inputs(rawinputs):
     inputs[i+1] = inputs[i+1]/2+0.5
     curprint(inputs[i] + str(inputs[i+1]),col.MGN)
   return [(inputs[i+i+1]) for i in range(0,int(len(inputs)/2))]
-  return [(inputs[i+i+1]/2+0.5) for i in range(0,int(len(inputs)/2))]
 
 def compute_fitness(inputs):
   xd = float(inputs[0])/100
@@ -172,7 +166,7 @@ def compute_fitness(inputs):
   opponentdistance = -math.sqrt((xd-oxd)**2+(yd-oyd)**2)
 
   fitness = (
-    10 * (centerstagedistance**2)+
+    10 * (centerstagedistance**2) +
     0  * (opponentdistance**2)
   )
   curprint("Cost:    " + str(fitness),col.CYN)
@@ -193,6 +187,9 @@ def neural_decide(inputs):
       oval = nn_values[n][po[0]]*po[1]
       outputs[po[2]] += oval
     nn_values.append([math.tanh(o) for o in outputs])
+    # if n == MIDLAYERS-1:
+    #   for i in range(0,MIDSIZE[n]):
+    #     curprint(str(nn_values[n+1][i]),col.WHT)
 
   # curprint(nn_values)
 
@@ -279,10 +276,13 @@ def neural_update_layer(li,output,learnrate,target = 0):
 
   oval = nn_values[li][output] #Value of output node
 
+  # counter = 0
   for i in range (0,len(nn_weights[li-1])): #For every weight coming into this layer
     if nn_weights[li-1][i][2] == output: #If the output node is the specified output node
       pi = nn_weights[li-1][i][0] #Index of previous node
       wdelta = learnrate*nn_values[li-1][pi]*activation(oval)
+      # if (wdelta == 0):
+      #   counter += 1
       if li > MIDLAYERS:
         wdelta *= (target-oval)
       else:
@@ -291,10 +291,15 @@ def neural_update_layer(li,output,learnrate,target = 0):
           if obw[0] == output:
             nval = nn_values[li+1][obw[2]]
             dsum += (obw[1]*(target-nval)*activation(nval))
+        if (dsum == 0):
+          curprint(str(dsum)+",",col.RED)
         wdelta *= dsum
       nn_weights[li-1][i][1] += wdelta #Update incoming weight
       if li > 1:
         neural_update_layer(li-1,pi,learnrate,target) #Update previous layer matching input to this layer
+  # curprint(str(counter)+",",col.RED)
+  # curreset()
+  # time.sleep(1/60)
 
 def neural_update(inputs,output):
   global _lastfitness, _lastdelta, _lastdd, _first, nn_weights, _streak
@@ -307,29 +312,17 @@ def neural_update(inputs,output):
     # curprint(col.CYN + str(fd) + col.BLN)
     # curprint("  " + col.CYN + str(dd) + col.BLN)
     if fd >= 0 and dd >= 0: #If we're not improving and our rate of improvement isn't improving
-      # if _lastdd == 1:
-      #   _streak = 1
-      # else:
-      #   _streak += 1
       # neural_update_layer(MIDLAYERS+1,output,PUNISHR*_streak*(fd+0.01),0)
       _lastdd = -1
-      neural_update_layer(MIDLAYERS+1,output,PUNISHR*(fd+0.1),0)
+      neural_update_layer(MIDLAYERS+1,output,PUNISHR,0)
     elif fd < 0 and dd < 0: #If we're improving and our rate of improvement is improving
-      # if _lastdd == -1:
-      #   _streak = 1
-      # else:
-      #   _streak += 1
       # neural_update_layer(MIDLAYERS+1,output,LEARNR*_streak*fd*(-1),1)
       _lastdd = 1
-      neural_update_layer(MIDLAYERS+1,output,LEARNR*fd*(-1),1)
+      neural_update_layer(MIDLAYERS+1,output,LEARNR,1)
     elif fd < 0: #If we're at least improving
-      # if _lastdd == -1:
-      #   _streak = 1
-      # else:
-      #   _streak += 1
       # neural_update_layer(MIDLAYERS+1,output,LEARNR*_streak*fd*(-1),1)
       _lastdd = 1
-      neural_update_layer(MIDLAYERS+1,output,LEARNR*fd*(-1),1)
+      neural_update_layer(MIDLAYERS+1,output,LEARNR,1)
     else:
       _lastdd = 0
     # neural_update_layer_old(len(nn_weights)-1,output,fc)
@@ -352,6 +345,7 @@ def act(output):
   if oname == "jump":
     n = 1
   if oname == "recover":
+    y = 20
     w = 1
   if oname == "crouch":
     y = 235
@@ -369,10 +363,10 @@ def act(output):
     s = 1
   device.write(ecodes.EV_ABS, ecodes.ABS_X, x)
   device.write(ecodes.EV_ABS, ecodes.ABS_Y, y)
-  device.write(ecodes.EV_KEY, ecodes.BTN_WEST, w)
   device.write(ecodes.EV_KEY, ecodes.BTN_NORTH, n)
+  device.write(ecodes.EV_KEY, ecodes.BTN_WEST, w)
   device.write(ecodes.EV_KEY, ecodes.BTN_SOUTH, s)
-  device.write(ecodes.EV_SYN, ecodes.SYN_REPORT, 1)
+  device.write(ecodes.EV_SYN, ecodes.SYN_REPORT, 0)
 
 def curreset():
   global _currow, _curcol
@@ -389,6 +383,8 @@ def curprint(string,colorbits,newline=True):
   pad.addstr(ss+" "*(TERMCOLS-lss),curses.color_pair(colorbits)+curses.A_BOLD)
   if newline:
     _currow += 1
+    if _currow == TERMROWS-1:
+      _currow = 0
     _curcol = 0
   else:
     _curcol += lss
@@ -424,17 +420,19 @@ def printoutputs(output):
     gc = _outcount[i][0]
     rc = _outcount[i][2]
     nc = _outcount[i][1] + gc + rc
-    curprint(str(gc)+" "*(8-len(str(gc))),col.GRN,False)
-    curprint(str(nc)+" "*(8-len(str(nc))),col.WHT,False)
-    curprint(str(rc)+" "*(8-len(str(rc))),col.RED,False)
+    curprint(str(gc)+" "*(10-len(str(gc))),col.GRN,False)
+    curprint(str(nc)+" "*(10-len(str(nc))),col.WHT,False)
+    curprint(str(rc)+" "*(10-len(str(rc))),col.RED,False)
     curprint(str(nn_values[-1][i]),(col.GRN if (i == maxi) else col.YLW) if (i == output) else col.BLU)
 
 def precompute_offsets(mem_file):
   global STATEADDRESS
   #Precompute offsets
+  i = 0;
   for value in BYTEOFFSET:
     start = RAMOFFSET
     chunk = None
+    j = 0
     for bo in value[2]:
       if chunk:
         start = RAMOFFSET + int(chunk,16)
@@ -445,9 +443,15 @@ def precompute_offsets(mem_file):
         break
       chunk = mem_file.read(CHUNKSIZE)  # read region contents
       chunk = binascii.hexlify(chunk).decode('ascii')
+      # curprint("Chunk "+str(i)+","+str(j)+": "+str(start)+" -> "+chunk,col.WHT)
+      # curprint("Chunk "+str(i)+","+str(j)+": "+str(start)+" -> "+str(int(chunk,16)),col.WHT)
+      j += 1
     value[2] = start
     if value[0] == "P1 State":
       STATEADDRESS = value[2]
+    i += 1
+  # curreset()
+  # time.sleep(100)
 
 def init_curses():
   pad = curses.newpad(TERMROWS,TERMCOLS)
