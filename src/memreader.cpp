@@ -6,6 +6,7 @@ unsigned int dolphin_pid;
 FILE* _dolphin_memory_descriptor;
 std::vector<struct ram_address_info> byte_offsets;
 unsigned long p1_state_address = 0;
+std::string dolphin_memfile;
 
 int init_memreader() {
   char buf[512];
@@ -14,9 +15,17 @@ int init_memreader() {
   dolphin_pid = strtoul(buf, NULL, 10);
   pclose( cmd_pipe );
 
-  curprint("%u\n",dolphin_pid); refresh();
+  // curprint("%u\n",dolphin_pid); refresh();
+  if (dolphin_pid == 0) {
+    return -1; //Dolphin not found
+  }
 
-  _dolphin_memory_descriptor = fopen(("/proc/"+std::to_string(dolphin_pid)+"/mem").c_str(), "rb");
+  dolphin_memfile = ("/proc/"+std::to_string(dolphin_pid)+"/mem");
+  _dolphin_memory_descriptor = fopen(dolphin_memfile.c_str(), "rb");
+  // curprint("%u\n",_dolphin_memory_descriptor); refresh();
+  if (_dolphin_memory_descriptor == 0) {
+    return -2; //Not running as root
+  }
 
   std::vector<struct ram_address_info_raw> raw_addresses = {
     {"P1 X    ","float",{PLAYERENTITY[0] + std::stoul("B0",nullptr,16), hexint("2C"), hexint("B0")}},
@@ -96,6 +105,9 @@ std::vector<struct ram_address_info> precompute_offsets(std::vector<struct ram_a
 std::vector<unsigned long> get_game_state() {
   std::vector<unsigned long> gs;
 
+  if (! file_available(dolphin_memfile.c_str())) {
+    return gs;
+  }
   unsigned long chunk;
   char ramdata[CHUNKSIZE];
   for (unsigned i = 0; i < byte_offsets.size(); ++i) {
@@ -109,9 +121,14 @@ std::vector<unsigned long> get_game_state() {
   return gs;
 }
 
-unsigned long get_game_byte(unsigned long address) {
+unsigned long get_game_byte(unsigned long address, int& errorflag) {
   unsigned long chunk = 0;
   char ramdata[CHUNKSIZE];
+
+  if (! file_available(dolphin_memfile.c_str())) {
+    errorflag = -1;
+    return 0;
+  }
 
   fseek(_dolphin_memory_descriptor,0,SEEK_SET);  //Reset seek pointer
   fseek(_dolphin_memory_descriptor,address,SEEK_SET);

@@ -53,7 +53,7 @@ void device_write(input_event ie, bool sync = false);
 void device_write(input_combo ic);
 void device_sync();
 int close_device();
-void act(input_name in);
+int act(input_name in);
 
 }
 

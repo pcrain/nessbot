@@ -62,7 +62,7 @@ public:
   void populate_inputs(std::vector<unsigned long> rawinputs);
   void neural_update_layer(unsigned li,int lastoutput,precfloat lr,precfloat target);
   precfloat activation(precfloat f);
-  input_name neural_decide(std::vector<unsigned long> rawinputs);
+  input_name neural_decide();
   void printoutputs(int output);
   void compute_layer_error_derivatives(unsigned li, int targetoutput, precfloat targetval);
 

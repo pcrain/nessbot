@@ -15,6 +15,8 @@
 #include <string>
 #include <string.h>
 
+#include "termoutput.h"
+
 namespace nessbot {
 
 const unsigned char CHUNKSIZE = 4;

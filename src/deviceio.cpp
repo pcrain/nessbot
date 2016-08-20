@@ -18,6 +18,8 @@ struct input_combo {
   unsigned char s;
 };
 
+const char* EVDEVICE = "/dev/input/event14";
+
 const int IE_SIZE = sizeof(input_event);
 const int IC_SIZE = sizeof(input_event);
 
@@ -37,9 +39,9 @@ const struct input_combo input_smash_down    = {136,235,0,0,0,1};
 static int _devince_input_descriptor = -1;
 
 int init_device() {
-  _devince_input_descriptor = open("/dev/input/event14", O_RDWR | O_NOCTTY | O_NDELAY | O_NONBLOCK);
+  _devince_input_descriptor = open(EVDEVICE, O_RDWR | O_NOCTTY | O_NDELAY | O_NONBLOCK);
   if (_devince_input_descriptor == -1) {
-    perror("open_port: Unable to open /dev/input/event14 - ");
+    // perror("open_port: Unable to open /dev/input/event14 - ");
     close(_devince_input_descriptor);
     return(-1);
   }
@@ -101,7 +103,10 @@ void device_write(input_event ie, bool sync) {
     write(_devince_input_descriptor, &SYNC_EVENT, IE_SIZE);
 }
 
-void act(input_name in) {
+int act(input_name in) {
+  if (! file_available(EVDEVICE)) {
+    return -1;
+  }
   switch(in) {
     case inname_neutral     : device_write(input_neutral);     break;
     case inname_left        : device_write(input_left);        break;
@@ -115,6 +120,7 @@ void act(input_name in) {
     // case inname_smash_down  : device_write(input_smash_down);  break;
     default                 : device_write(input_neutral);     break;
   }
+  return 0;
 }
 
 void device_write(input_combo ic){

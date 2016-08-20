@@ -49,7 +49,7 @@ namespace nessbot {
   std::vector<struct ram_address_info> precompute_offsets(std::vector<struct ram_address_info_raw> raw_addresses);
   std::vector<unsigned long> get_game_state();
   void monitor_game_state();
-  unsigned long get_game_byte(unsigned long address);
+  unsigned long get_game_byte(unsigned long address, int& errorflag);
 }
 
 #endif /* MEMREADER_H_ */

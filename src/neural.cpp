@@ -124,9 +124,6 @@ namespace nessbot {
   }
 
   void NeuralNetwork::neural_update_layer(unsigned li, int lastoutput, precfloat lr, precfloat target = 0) {
-    // nn_weights[li] = weights between layer li and li + 1 (0 = input layer)
-    // nn_values[li]  = values of nodes at layer li (0 = input layer)
-
     compute_layer_error_derivatives(li,lastoutput,target);
 
     for (unsigned i = 0; i < num_layer_weights[li-1]; ++i) { //For every weight coming into this layer
@@ -238,9 +235,7 @@ namespace nessbot {
     curprint(RED,"P1 State     %u\n",p1state);
   }
 
-  input_name NeuralNetwork::neural_decide(std::vector<unsigned long> rawinputs) {
-    populate_inputs(rawinputs);
-
+  input_name NeuralNetwork::neural_decide() {
     unsigned olayer = num_middle_layers+1;
 
     for (unsigned n = 0; n < olayer; ++n) {

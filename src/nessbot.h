@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <unistd.h>
+#include <exception>
 
 #include "util.h"
 #include "termoutput.h"
@@ -20,7 +21,8 @@ extern unsigned long p1_state_address;
 int run(int argc, char** argv);
 void exit_handler(int s);
 void init_exit_handler();
-void learn_to_melee();
+int learn_to_melee();
+void exit_normal();
 
 }
 
