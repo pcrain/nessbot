@@ -74,4 +74,9 @@ float hexfloat(unsigned long hexint) {
   return f;
 }
 
+bool file_available(const char* fname) {
+  std::ifstream infile(fname);
+  return infile.good();
+}
+
 }

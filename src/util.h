@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <iostream>
+#include <fstream>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <stdarg.h>
@@ -26,6 +27,7 @@ void fsleep(int frames);
 unsigned long hexint(std::string hexstring);
 float hexfloat(unsigned long hexint);
 void endianfix(char (&array)[4]);
+bool file_available(const char* fname);
 
 }
 

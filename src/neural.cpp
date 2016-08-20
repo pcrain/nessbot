@@ -4,22 +4,27 @@ namespace nessbot {
   const unsigned NUM_INPUTS = 8;
 
   NeuralNetwork::NeuralNetwork() {
-    num_middle_layers  = 1;
-    middle_layer_size  = 50;
-    learn_rate         = 0.01l;
-    punish_rate        = learn_rate;
-    mutation_rate      = 0.01l;
-    chaos_rate         = 0.05l;
+    if (file_available("./_default_config.json")) {
+      load_neural_config("./_default_config.json");
+    } else {
+      num_middle_layers  = 1;
+      middle_layer_size  = 50000;
+      learn_rate         = 0.0001l;
+      punish_rate        = learn_rate;
+      mutation_rate      = 0.01l;
+      chaos_rate         = 0.05l;
 
-    last_fitness       = 0;
-    last_fitness_delta = 0;
-    last_fitness_dd    = 0;
-    p1state            = 0;
-    firstframe         = true;
+      last_fitness       = 0;
+      last_fitness_delta = 0;
+      last_fitness_dd    = 0;
+      p1state            = 0;
+      firstframe         = true;
 
-    history_length     = 100000;
-    history_index      = 0;
+      history_length     = 100000;
+      history_index      = 0;
 
+      save_neural_config("./_default_config.json");
+    }
     init_network();
   }
 
@@ -136,9 +141,6 @@ namespace nessbot {
     }
   }
 
-  //li = layer index
-  //targetoutput = the value we want to modify
-  //targetval = the target value for targetoutput
   void NeuralNetwork::compute_layer_error_derivatives(unsigned li, int targetoutput, precfloat targetval) {
     if (li == num_middle_layers+1) {
       for (int i = 0; i < inname_end; ++i) {
@@ -161,38 +163,6 @@ namespace nessbot {
       nn_errors[li][i] = errorsum*activation(nn_values[li][i]);
     }
   }
-
-  // void NeuralNetwork::neural_update_layer(unsigned li, int lastoutput, precfloat lr, precfloat target = 0) {
-  //   // nn_weights[li] = weights between layer li and li + 1 (0 = input layer)
-  //   // nn_values[li]  = values of nodes at layer li (0 = input layer)
-
-  //   unsigned ulast = lastoutput; //To avoid sign-compare warning
-  //   precfloat oval = nn_values[li][ulast]; //Value of output node
-
-  //   for (unsigned i = 0; i < num_layer_weights[li-1]; ++i) { //For every weight coming into this layer
-  //     if (nn_weights[li-1][i].b == ulast) { //If the output node is the specified output node
-  //       unsigned pi = nn_weights[li-1][i].a; //Index of previous node
-  //       precfloat wdelta = lr*nn_values[li-1][pi]*activation(oval);
-  //       if (li > num_middle_layers) {
-  //         wdelta *= (target-oval);
-  //       }
-  //       else {
-  //         precfloat dsum = 0.0f;
-  //         for (unsigned j = 0; j < num_layer_weights[li]; ++j) { //For every weight coming into this layer
-  //           if (nn_weights[li][j].a == ulast) {
-  //             precfloat nval = nn_values[li+1][nn_weights[li][j].b];
-  //             dsum += (nn_weights[li][j].w*(target-nval)*activation(nval));
-  //           }
-  //         }
-  //         wdelta *= dsum;
-  //       }
-  //       nn_weights[li-1][i].w += wdelta; //Update incoming weight
-  //       if (li > 1) {
-  //         neural_update_layer(li-1,pi,lr,target); //Update previous layer matching input to this layer
-  //       }
-  //     }
-  //   }
-  // }
 
   precfloat NeuralNetwork::compute_fitness(std::vector<unsigned long> inputs) {
     precfloat xd = hexfloat(inputs[0])/100;
@@ -395,4 +365,45 @@ namespace nessbot {
       curprint( (i == output) ? ((i == maxi) ? GRN : YLW) : BLU,"%f\n",nn_values[num_middle_layers+1][i]);
     }
   }
+
+  void NeuralNetwork::save_neural_config(std::string fname) {
+    Json::Value root;
+
+    root["history_length"]    = history_length;
+    root["num_middle_layers"] = num_middle_layers;
+    root["middle_layer_size"] = middle_layer_size;
+    root["learn_rate"]        = learn_rate;
+    root["punish_rate"]       = punish_rate;
+    root["mutation_rate"]     = mutation_rate;
+    root["chaos_rate"]        = chaos_rate;
+
+    std::ofstream ofile;
+    ofile.open(fname);
+    Json::StyledWriter styledWriter;
+    ofile << styledWriter.write(root);
+    ofile.close();
+  }
+
+  //From http://stackoverflow.com/questions/2602013/read-whole-ascii-file-into-c-stdstring
+  void NeuralNetwork::load_neural_config(std::string fname) {
+    std::string jsonstring;
+    std::ifstream t(fname);
+    t.seekg(0, std::ios::end);
+    jsonstring.reserve(t.tellg());
+    t.seekg(0, std::ios::beg);
+    jsonstring.assign((std::istreambuf_iterator<char>(t)),std::istreambuf_iterator<char>());
+
+    Json::Value root;
+    Json::Reader reader;
+    reader.parse(jsonstring,root,false);
+
+    history_length     = root["history_length"].asUInt();
+    num_middle_layers  = root["num_middle_layers"].asUInt();
+    middle_layer_size  = root["middle_layer_size"].asUInt();
+    learn_rate         = root["learn_rate"].asDouble();
+    punish_rate        = root["punish_rate"].asDouble();
+    mutation_rate      = root["mutation_rate"].asDouble();
+    chaos_rate         = root["chaos_rate"].asDouble();
+  }
+
 }

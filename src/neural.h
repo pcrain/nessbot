@@ -8,6 +8,10 @@
 #include <vector>
 #include <string>
 #include <random>
+#include <json/value.h>
+#include <json/writer.h>
+#include <json/reader.h>
+#include <fstream>
 
 #include "deviceio.h"
 #include "termoutput.h"
@@ -24,6 +28,7 @@ struct nodeweight {
 
 class NeuralNetwork {
 private:
+  //Settings
   unsigned history_length;
   unsigned num_middle_layers;
   unsigned middle_layer_size;
@@ -32,18 +37,19 @@ private:
   precfloat mutation_rate;
   precfloat chaos_rate;
 
+  //Private variables
   precfloat last_fitness;
   precfloat last_fitness_delta;
   int last_fitness_dd;
   int p1state;
   bool firstframe;
+  unsigned history_index;
 
+  //Private arrays
   precfloat** nn_values;
   precfloat** nn_errors;
   struct nodeweight** nn_weights;
   unsigned* num_layer_weights;
-
-  unsigned history_index;
   int* history_value;
   int* history_weight;
   int (*history_count)[3];
@@ -59,6 +65,9 @@ public:
   input_name neural_decide(std::vector<unsigned long> rawinputs);
   void printoutputs(int output);
   void compute_layer_error_derivatives(unsigned li, int targetoutput, precfloat targetval);
+
+  void save_neural_config(std::string fname);
+  void load_neural_config(std::string fname);
 };
 
 }

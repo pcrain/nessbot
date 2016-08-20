@@ -54,7 +54,8 @@ void learn_to_melee() {
     p1state = get_game_byte(p1_state_address);
     while (true) {
       // if ( (p1state <= 12) || (p1state > 1000) || (p1state == 341) ) {
-      if ( (p1state <= 12) ) {
+      // if ( (p1state <= 12) ) {
+      if ( (p1state == 0) || (p1state == 12) ) {
         usleep(100000);
         p1state = get_game_byte(p1_state_address);
       } else break;

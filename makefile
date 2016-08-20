@@ -22,7 +22,10 @@ build/main.d
 
 LIBS := -ljsoncpp -lncurses
 
-all: nessbot
+MKDIR_P = mkdir -p
+OUT_DIR = build
+
+all: directories nessbot
 
 nessbot: $(OBJS)
 	@echo 'Building target: $@'
@@ -39,8 +42,13 @@ build/%.o: ./src/%.cpp
 	@echo ' '
 
 clean:
-	-$(RM) $(OBJS)$(C++_DEPS) ./cnessbot
+	-$(RM) $(OBJS)$(C++_DEPS) ./cnessbot ./_default_config.json
 	-@echo ' '
 
-.PHONY: all clean dependents
+directories: ${OUT_DIR}
+
+${OUT_DIR}:
+	${MKDIR_P} ${OUT_DIR}
+
+.PHONY: all clean dependents directories
 .SECONDARY:
