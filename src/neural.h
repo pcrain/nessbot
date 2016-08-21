@@ -26,15 +26,23 @@ enum mem_operation {
   mem_gt,
   mem_eq,
   mem_pos,
+  mem_neg,
   mem_zero,
+  mem_mul,
+  mem_div,
+  mem_divc,  //Constant division
 };
 
 //TODO: compiler complains when this is made constant
 static std::map<std::string,mem_operation> MEM_OP_MAP = {
-  {">", mem_gt  },
-  {"=", mem_eq  },
-  {">0",mem_pos },
-  {"=0",mem_zero}
+  {">",  mem_gt   },
+  {"=",  mem_eq   },
+  {">0", mem_pos  },
+  {">0", mem_neg  },
+  {"=0", mem_zero },
+  {"*",  mem_mul  },
+  {"/",  mem_div  },
+  {"/c", mem_divc },
 };
 
 struct nodeweight {
@@ -81,8 +89,12 @@ private:
 
   std::vector<ram_value> dolphin_values;
   std::vector<unsigned> output_indices;
+
   std::vector<std::string> output_names;
   std::vector<computation> input_computations;
+
+  std::vector<unsigned> fitness_indices;
+  std::vector<precfloat> fitness_weights;
 public:
   NeuralNetwork();
   ~NeuralNetwork();

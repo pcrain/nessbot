@@ -161,19 +161,10 @@ namespace nessbot {
   }
 
   precfloat NeuralNetwork::compute_fitness(std::vector<ram_value> inputs) {
-    precfloat xd =  inputs[named_byte_map["P1 X"]].f/100;
-    precfloat yd =  inputs[named_byte_map["P1 Y"]].f/100;
-    precfloat oxd = inputs[named_byte_map["P2 X"]].f/100;
-    precfloat oyd = inputs[named_byte_map["P2 Y"]].f/100;
-
-    // precfloat centerstagedistance = std::sqrt(xd*xd+yd*yd);
-    precfloat centerstagedistance = xd;
-
-    precfloat opponentdistance = -(std::sqrt((xd-oxd)*(xd-oxd)+(yd-oyd)*(yd-oyd)));
-    precfloat fitness = (
-        10 * (centerstagedistance*centerstagedistance)
-      // + 0  * (opponentdistance*opponentdistance)
-    );
+    precfloat fitness = 0;
+    for (unsigned i = 0; i < fitness_weights.size(); ++i) {
+      fitness += dolphin_values[fitness_indices[i]].f*fitness_weights[i];
+    }
     precfloat lfd = fitness - last_fitness;
 
     curprint(CYN,"Cost:    %f\n",fitness);
@@ -203,7 +194,14 @@ namespace nessbot {
         case mem_gt:   dolphin_values[ir].f = ((v1 >  v2) ? 1 : -1); break;
         case mem_eq:   dolphin_values[ir].f = ((v1 == v2) ? 1 : -1); break;
         case mem_pos:  dolphin_values[ir].f = ((v1 >  0 ) ? 1 : -1); break;
+        case mem_neg:  dolphin_values[ir].f = ((v1 <  0 ) ? 1 : -1); break;
         case mem_zero: dolphin_values[ir].f = ((v1 == 0 ) ? 1 : -1); break;
+        case mem_mul:  dolphin_values[ir].f = ( v1 *  v2)          ; break;
+        case mem_div:  dolphin_values[ir].f = ( v1 /  v2)          ; break;
+        case mem_divc:
+          dolphin_values[ir].f =
+          ( v1 / std::stof(output_names[input_computations[i].iarg2]));
+          break;
       }
     }
 
@@ -215,9 +213,10 @@ namespace nessbot {
     }
 
     for (unsigned i = 0; i < output_indices.size(); ++i) {
-      unsigned slen = output_names[i].size();
-      output_names[i].insert(slen,15-slen,' ');
-      curprint(MGN,"%s%f\n",output_names[i].c_str(),nn_values[0][i]);
+      unsigned oi = output_indices[i];
+      unsigned slen = output_names[oi].size();
+      output_names[oi].insert(slen,15-slen,' ');
+      curprint(MGN,"%s%f\n",output_names[oi].c_str(),nn_values[0][i]);
     }
     curprint(RED,"P1 State     %u\n",p1state);
   }
@@ -351,13 +350,13 @@ namespace nessbot {
   void NeuralNetwork::save_default_neural_config(std::string fname) {
     Json::Value root;
 
-    root["history_length"]    = history_length;
-    root["num_middle_layers"] = num_middle_layers;
-    root["middle_layer_size"] = middle_layer_size;
-    root["learn_rate"]        = learn_rate;
-    root["punish_rate"]       = punish_rate;
-    root["mutation_rate"]     = mutation_rate;
-    root["chaos_rate"]        = chaos_rate;
+    root["history_length"]    = 100000;
+    root["num_middle_layers"] = 1;
+    root["middle_layer_size"] = 50000;
+    root["learn_rate"]        = 0.0001;
+    root["punish_rate"]       = 0.0001;
+    root["mutation_rate"]     = 0.01;
+    root["chaos_rate"]        = 0.05;
 
     root["raw_addresses"] = Json::Value(Json::arrayValue);
     for (unsigned i = 0; i < raw_addresses.size(); ++i) {
@@ -413,6 +412,21 @@ namespace nessbot {
     root["computations"][6]["operation"] = "=";
     root["computations"][6]["output"]    = true;
 
+    root["computations"][7]["arg1"]      = "P1 X";
+    root["computations"][7]["arg2"]      = "100";
+    root["computations"][7]["name"]      = "To Center X";
+    root["computations"][7]["operation"] = "/c";
+    root["computations"][7]["output"]    = false;
+
+    root["computations"][8]["arg1"]      = "To Center X";
+    root["computations"][8]["arg2"]      = "To Center X";
+    root["computations"][8]["name"]      = "TCX^2";
+    root["computations"][8]["operation"] = "*";
+    root["computations"][8]["output"]    = false;
+
+    root["fitness"][0]["name"]           = "TCX^2";
+    root["fitness"][0]["weight"]         = 10.0f;
+
     std::ofstream ofile;
     ofile.open(fname);
     Json::StyledWriter styledWriter;
@@ -449,11 +463,13 @@ namespace nessbot {
       for (unsigned j = 0; j < root["raw_addresses"][i]["address_strings"].size(); ++j) {
         address_strings.push_back(root["raw_addresses"][i]["address_strings"][j].asString());
       }
+      std::string name = root["raw_addresses"][i]["friendly_name"].asString();
       raw_addresses.push_back({
-        root["raw_addresses"][i]["friendly_name"].asString(),
+        name,
         root["raw_addresses"][i]["type"].asString(),
         address_strings
       });
+      output_names.push_back(name);
     }
 
     precompute_offsets();  //Need to recompute RAM offsets for memreader
@@ -469,21 +485,22 @@ namespace nessbot {
       if (named_byte_map.count(narg1) > 0) {
         iarg1 = named_byte_map[narg1];
       } else {
-        rawsize += 1;
         named_byte_map[narg1] = rawsize;
         iarg1 = rawsize;
+        rawsize += 1;
+        output_names.push_back(root["computations"][i]["arg1"].asString());
       }
 
       std::string narg2 = root["computations"][i]["arg2"].asString();
       if (named_byte_map.count(narg2) > 0) {
         iarg2 = named_byte_map[narg2];
       } else {
-        rawsize += 1;
         named_byte_map[narg2] = rawsize;
         iarg2 = rawsize;
+        rawsize += 1;
+        output_names.push_back(root["computations"][i]["arg2"].asString());
       }
 
-      rawsize += 1;
       named_byte_map[root["computations"][i]["name"].asString()] = rawsize;
 
       dolphin_values.clear();
@@ -491,15 +508,20 @@ namespace nessbot {
 
       if (root["computations"][i]["output"].asBool()) {
         output_indices.push_back(rawsize);
-        output_names.push_back(root["computations"][i]["name"].asString());
       }
+      output_names.push_back(root["computations"][i]["name"].asString());
 
       input_computations.push_back( {iarg1,iarg2,rawsize,mem_op} );
+      rawsize += 1;
       // curprint("%u,%u,%u,%u\n",iarg1,iarg2,rawsize,mem_op); refresh(); fsleep(60);
     }
-
     num_inputs = output_indices.size();
     // fsleep(60*60*60);
+
+    for (unsigned i = 0; i < root["fitness"].size(); ++i) {
+      fitness_indices.push_back(named_byte_map[root["fitness"][i]["name"].asString()]);
+      fitness_weights.push_back(root["fitness"][i]["weight"].asFloat());
+    }
   }
 
 }
