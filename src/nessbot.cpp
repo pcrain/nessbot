@@ -4,6 +4,7 @@ namespace nessbot {
 
 int run(int argc, char** argv) {
   int error = 0;
+  shouldExit = false;
 
   init_exit_handler();
   init_curses();
@@ -52,7 +53,7 @@ int learn_to_melee() {
 
   unsigned long p1state, framenum = 0, lastframe = framenum; //Arbitrary nonzero value
 
-  while (true) {
+  while (!shouldExit) {
     curreset(); refresh();
     gs = get_game_state();
     if (gs.size() == 0) { return -3; } //Dolphin was closed
@@ -75,6 +76,7 @@ int learn_to_melee() {
     framenum = get_game_byte(GTADDRESS,error).u;
     if (error < 0) { return -3; }
     while( framenum == lastframe ) {
+      if (shouldExit) break;
       usleep(10000);
       framenum = get_game_byte(GTADDRESS,error).u;
       if (error < 0) { return -3; }
@@ -84,6 +86,7 @@ int learn_to_melee() {
     p1state = get_game_byte(p1_state_address,error).u;
     if (error < 0) { return -3; }
     while (true) {
+      if (shouldExit) break;
       // if ( (p1state <= 12) || (p1state > 1000) || (p1state == 341) ) {
       // if ( (p1state <= 12) ) {
       if ( (p1state == 0) || (p1state == 12) ) {
@@ -97,6 +100,7 @@ int learn_to_melee() {
     lastframe = framenum;
     curprint(WHT,"%lu",framenum);
   }
+  nn.save_network();
   return 0;
 }
 
@@ -107,10 +111,12 @@ void exit_normal() {
 }
 
 void exit_handler(int s) {
-  close_memreader();
-  close_device();
-  end_curses();
-  exit(0);
+  shouldExit = true;
+  return;
+  // close_memreader();
+  // close_device();
+  // end_curses();
+  // exit(0);
 }
 
 void init_exit_handler() {

@@ -25,6 +25,7 @@ namespace nessbot {
     }
     load_neural_config("./_default_config.json");
     init_network();
+    load_network();
   }
 
   NeuralNetwork::~NeuralNetwork() {
@@ -524,4 +525,59 @@ namespace nessbot {
     }
   }
 
+  void NeuralNetwork::save_network() {
+    Json::Value root;
+
+    clear(); curprint("Writing weights to file"); refresh();
+
+    root["weights"] = Json::Value(Json::arrayValue);
+    for (unsigned i = 0; i < num_middle_layers+1; ++i) {
+      unsigned jmax = ((i == 0) ? num_inputs : middle_layer_size);
+      unsigned kmax = ((i < num_middle_layers) ? middle_layer_size : inname_end);
+      unsigned counter = 0;
+      for (unsigned j = 0; j < jmax; ++j) {
+        for (unsigned k = 0; k < kmax; ++k) {
+          root["weights"][i][counter] = nn_weights[i][counter].w;
+          ++counter;
+        }
+      }
+    }
+
+    std::ofstream ofile;
+    ofile.open("_weights.json");
+    Json::StyledWriter styledWriter;
+    ofile << styledWriter.write(root);
+    ofile.close();
+  }
+
+  void NeuralNetwork::load_network() {
+    if (! file_available("_weights.json")) {
+      return;
+    }
+
+    clear(); curprint("Loading weights from file"); refresh();
+
+    std::string jsonstring;
+    std::ifstream t("_weights.json");
+    t.seekg(0, std::ios::end);
+    jsonstring.reserve(t.tellg());
+    t.seekg(0, std::ios::beg);
+    jsonstring.assign((std::istreambuf_iterator<char>(t)),std::istreambuf_iterator<char>());
+
+    Json::Value root;
+    Json::Reader reader;
+    reader.parse(jsonstring,root,false);
+
+    for (unsigned i = 0; i < num_middle_layers+1; ++i) {
+      unsigned jmax = ((i == 0) ? num_inputs : middle_layer_size);
+      unsigned kmax = ((i < num_middle_layers) ? middle_layer_size : inname_end);
+      unsigned counter = 0;
+      for (unsigned j = 0; j < jmax; ++j) {
+        for (unsigned k = 0; k < kmax; ++k) {
+          nn_weights[i][counter].w = root["weights"][i][counter].asFloat();
+          ++counter;
+        }
+      }
+    }
+  }
 }

@@ -110,6 +110,8 @@ public:
 
   void save_default_neural_config(std::string fname);
   void load_neural_config(std::string fname);
+  void save_network();
+  void load_network();
 };
 
 }
