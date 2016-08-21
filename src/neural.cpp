@@ -2,30 +2,28 @@
 #include "memreader.h"
 
 namespace nessbot {
-  const unsigned NUM_INPUTS = 7;
-
   NeuralNetwork::NeuralNetwork() {
-    if (file_available("./_default_config.json")) {
-      load_neural_config("./_default_config.json");
-    } else {
-      num_middle_layers  = 1;
-      middle_layer_size  = 50000;
-      learn_rate         = 0.0001l;
-      punish_rate        = learn_rate;
-      mutation_rate      = 0.01l;
-      chaos_rate         = 0.05l;
+    if (!file_available("./_default_config.json")) {
+      num_middle_layers   = 1;
+      middle_layer_size   = 50000;
+      learn_rate          = 0.0001l;
+      punish_rate         = learn_rate;
+      mutation_rate       = 0.01l;
+      chaos_rate          = 0.05l;
 
-      last_fitness       = 0;
-      last_fitness_delta = 0;
-      last_fitness_dd    = 0;
-      p1state            = 0;
-      firstframe         = true;
+      last_fitness        = 0;
+      last_fitness_delta  = 0;
+      last_fitness_dd     = 0;
+      p1state             = 0;
+      firstframe          = true;
 
-      history_length     = 100000;
-      history_index      = 0;
+      history_length      = 100000;
+      history_index       = 0;
+      num_inputs          = 7;
 
-      save_neural_config("./_default_config.json");
+      save_default_neural_config("./_default_config.json");
     }
+    load_neural_config("./_default_config.json");
     init_network();
   }
 
@@ -66,7 +64,7 @@ namespace nessbot {
     num_layer_weights = new unsigned [num_middle_layers+1];
 
     for (unsigned i = 0; i < num_middle_layers+1; ++i) {
-      unsigned jmax = ((i == 0) ? NUM_INPUTS : middle_layer_size);
+      unsigned jmax = ((i == 0) ? num_inputs : middle_layer_size);
       unsigned kmax = ((i < num_middle_layers) ? middle_layer_size : inname_end);
       nn_values[i] = new precfloat[jmax];
       nn_errors[i] = new precfloat[jmax];
@@ -148,7 +146,7 @@ namespace nessbot {
       return;
     }
 
-    unsigned cursize = ( (li == 0) ? NUM_INPUTS : middle_layer_size);
+    unsigned cursize = ( (li == 0) ? num_inputs : middle_layer_size);
     unsigned upsize = ( (li == num_middle_layers) ? inname_end : middle_layer_size);
     unsigned n = 0;
 
@@ -202,14 +200,10 @@ namespace nessbot {
       float v1 = dolphin_values[input_computations[i].iarg1].f;
       float v2 = dolphin_values[input_computations[i].iarg2].f;
       switch(input_computations[i].mem_op) {
-        case mem_gt:
-          dolphin_values[ir].f = ((v1 >  v2) ? 1 : -1); break;
-        case mem_eq:
-          dolphin_values[ir].f = ((v1 == v2) ? 1 : -1); break;
-        case mem_pos:
-          dolphin_values[ir].f = ((v1 >  0 ) ? 1 : -1); break;
-        case mem_zero:
-          dolphin_values[ir].f = ((v1 == 0 ) ? 1 : -1); break;
+        case mem_gt:   dolphin_values[ir].f = ((v1 >  v2) ? 1 : -1); break;
+        case mem_eq:   dolphin_values[ir].f = ((v1 == v2) ? 1 : -1); break;
+        case mem_pos:  dolphin_values[ir].f = ((v1 >  0 ) ? 1 : -1); break;
+        case mem_zero: dolphin_values[ir].f = ((v1 == 0 ) ? 1 : -1); break;
       }
     }
 
@@ -354,7 +348,7 @@ namespace nessbot {
     }
   }
 
-  void NeuralNetwork::save_neural_config(std::string fname) {
+  void NeuralNetwork::save_default_neural_config(std::string fname) {
     Json::Value root;
 
     root["history_length"]    = history_length;
@@ -503,6 +497,8 @@ namespace nessbot {
       input_computations.push_back( {iarg1,iarg2,rawsize,mem_op} );
       // curprint("%u,%u,%u,%u\n",iarg1,iarg2,rawsize,mem_op); refresh(); fsleep(60);
     }
+
+    num_inputs = output_indices.size();
     // fsleep(60*60*60);
   }
 

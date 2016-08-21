@@ -53,6 +53,7 @@ struct computation {
 class NeuralNetwork {
 private:
   //Settings
+  unsigned num_inputs;
   unsigned history_length;
   unsigned num_middle_layers;
   unsigned middle_layer_size;
@@ -95,7 +96,7 @@ public:
   void printoutputs(int output);
   void compute_layer_error_derivatives(unsigned li, int targetoutput, precfloat targetval);
 
-  void save_neural_config(std::string fname);
+  void save_default_neural_config(std::string fname);
   void load_neural_config(std::string fname);
 };
 

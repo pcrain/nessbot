@@ -26,7 +26,6 @@ int run(int argc, char** argv) {
 
   srand(time(NULL));
 
-  // curprint("OFFSET = %lu\n",RAMOFFSET); refresh(); fsleep(60);
   // device_test();
   // monitor_game_state();
 
