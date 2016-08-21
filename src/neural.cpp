@@ -91,20 +91,17 @@ namespace nessbot {
     }
   }
 
-  void NeuralNetwork::neural_update(std::vector<ram_value> inputs, input_name lastoutput) {
-    precfloat fitness = compute_fitness(inputs);
+  void NeuralNetwork::neural_update(input_name lastoutput) {
+    precfloat fitness = compute_fitness();
     precfloat fd = fitness;
 
     if (!firstframe) {
       fd -= last_fitness;
       precfloat dd = fd - last_fitness_delta;
-      if (fd >= 0 && dd >= 0) { //If we're not improving and our rate of improvement isn't improving
+      if (fd >= 0 && dd >= 0) { //If we're not improving and showing no signs of improving in the future
         last_fitness_dd = -1;
         neural_update_layer(num_middle_layers+1,lastoutput,punish_rate,0);
-      } else if (fd < 0 && dd < 0) { //If we're improving and our rate of improvement is improving
-        last_fitness_dd = 1;
-        neural_update_layer(num_middle_layers+1,lastoutput,learn_rate,1);
-      } else if (fd < 0) { //If we're at least improving
+      } else if (fd < 0 || dd < 0) { //If we're at least improving
         last_fitness_dd = 1;
         neural_update_layer(num_middle_layers+1,lastoutput,learn_rate,1);
       } else {
@@ -161,12 +158,12 @@ namespace nessbot {
     }
   }
 
-  precfloat NeuralNetwork::compute_fitness(std::vector<ram_value> inputs) {
-    precfloat fitness = 0;
+  precfloat NeuralNetwork::compute_fitness() {
+    precfloat lfd, fitness = 0;
     for (unsigned i = 0; i < fitness_weights.size(); ++i) {
       fitness += dolphin_values[fitness_indices[i]].f*fitness_weights[i];
     }
-    precfloat lfd = fitness - last_fitness;
+    lfd = fitness - last_fitness;
 
     curprint(CYN,"Cost:    %f\n",fitness);
     curprint(CYN,"Change:  %f\n",lfd);
@@ -174,7 +171,7 @@ namespace nessbot {
     return fitness;
   }
 
-  void NeuralNetwork::populate_inputs(std::vector<ram_value> rawinputs) {
+  void NeuralNetwork::compute_inputs(std::vector<ram_value> rawinputs) {
     for (unsigned i = 0; i < rawinputs.size(); ++i) {
       unsigned slen = raw_addresses[i].name.size();
       raw_addresses[i].name.insert(slen,15-slen,' ');
@@ -207,22 +204,19 @@ namespace nessbot {
     }
 
     p1state = rawinputs[named_byte_map["P1 State"]].u;
+  }
 
+  void NeuralNetwork::populate_neural_inputs() {
     for (unsigned i = 0; i < output_indices.size(); ++i) {
       // nn_values[0][i] = dolphin_values[output_indices[i]].f;
       nn_values[0][i] = (dolphin_values[output_indices[i]].f)/2+0.5f;
-    }
-
-    for (unsigned i = 0; i < output_indices.size(); ++i) {
-      unsigned oi = output_indices[i];
-      unsigned slen = output_names[oi].size();
-      output_names[oi].insert(slen,15-slen,' ');
-      curprint(MGN,"%s%f\n",output_names[oi].c_str(),nn_values[0][i]);
+      curprint(MGN,"%s%f\n",spaced_names[output_indices[i]].c_str(),nn_values[0][i]);
     }
     curprint(RED,"P1 State     %u\n",p1state);
   }
 
   input_name NeuralNetwork::neural_decide() {
+    populate_neural_inputs();
     unsigned olayer = num_middle_layers+1;
 
     for (unsigned n = 0; n < olayer; ++n) {
@@ -239,9 +233,6 @@ namespace nessbot {
       }
       for (unsigned i = 0; i < nl; ++i) {
         // nn_values[n+1][i] = tanh(nn_values[n+1][i]);
-        if (n == olayer-2) {
-          // curprint("%f,",nn_values[n+1][i]);refresh();
-        }
       }
     }
 
@@ -276,7 +267,7 @@ namespace nessbot {
     }
 
     // Pick the best choice
-    if ((rand() / (precfloat)RAND_MAX) > chaos_rate) {
+    if ((rand() / (precfloat)RAND_MAX) >= chaos_rate) {
       unsigned best = 0;
       precfloat bval = nn_values[olayer][0];
       for (unsigned i = 1; i < olen; ++i) {
@@ -358,6 +349,7 @@ namespace nessbot {
     root["punish_rate"]       = 0.0001;
     root["mutation_rate"]     = 0.01;
     root["chaos_rate"]        = 0.05;
+    root["weights_file"]      = "";
 
     root["raw_addresses"] = Json::Value(Json::arrayValue);
     for (unsigned i = 0; i < raw_addresses.size(); ++i) {
@@ -455,6 +447,7 @@ namespace nessbot {
     punish_rate        = root["punish_rate"].asDouble();
     mutation_rate      = root["mutation_rate"].asDouble();
     chaos_rate         = root["chaos_rate"].asDouble();
+    weights_file       = root["weights_file"].asString();
 
     unsigned rawsize = root["raw_addresses"].size();
 
@@ -523,9 +516,20 @@ namespace nessbot {
       fitness_indices.push_back(named_byte_map[root["fitness"][i]["name"].asString()]);
       fitness_weights.push_back(root["fitness"][i]["weight"].asFloat());
     }
+
+    for (unsigned i = 0; i < output_names.size(); ++i) {
+      std::string sn = output_names[i];
+      unsigned len = sn.size();
+      sn.insert(len,15-len,' ');
+      spaced_names.push_back(sn);
+      // curprint(sn.c_str()); refresh(); fsleep(30);
+    }
   }
 
   void NeuralNetwork::save_network() {
+    if (weights_file.compare("") == 0) {
+      return;
+    }
     Json::Value root;
 
     clear(); curprint("Writing weights to file"); refresh();
@@ -544,14 +548,17 @@ namespace nessbot {
     }
 
     std::ofstream ofile;
-    ofile.open("_weights.json");
+    ofile.open(weights_file);
     Json::StyledWriter styledWriter;
     ofile << styledWriter.write(root);
     ofile.close();
   }
 
   void NeuralNetwork::load_network() {
-    if (! file_available("_weights.json")) {
+    if (weights_file.compare("") == 0) {
+      return;
+    }
+    if (! file_available(weights_file.c_str())) {
       return;
     }
 

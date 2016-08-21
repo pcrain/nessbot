@@ -2,6 +2,8 @@
 
 namespace nessbot {
 
+bool shouldExit;
+
 int run(int argc, char** argv) {
   int error = 0;
   shouldExit = false;
@@ -58,14 +60,16 @@ int learn_to_melee() {
     gs = get_game_state();
     if (gs.size() == 0) { return -3; } //Dolphin was closed
 
+    //Run computations on raw game state from this frame
+    nn.compute_inputs(gs);
+
     //Update neural network
     if (output >= 0) {
-      nn.neural_update(gs,output);
+      nn.neural_update(output);
       nn.printoutputs(output);
     }
 
     //Decide and act upon new action
-    nn.populate_inputs(gs);
     output = nn.neural_decide();
     error = act(output);
     if (error < 0) { return -1; }

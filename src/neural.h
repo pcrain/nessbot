@@ -77,6 +77,7 @@ private:
   int p1state;
   bool firstframe;
   unsigned history_index;
+  std::string weights_file;
 
   //Private arrays
   precfloat** nn_values;
@@ -91,6 +92,7 @@ private:
   std::vector<unsigned> output_indices;
 
   std::vector<std::string> output_names;
+  std::vector<std::string> spaced_names;
   std::vector<computation> input_computations;
 
   std::vector<unsigned> fitness_indices;
@@ -99,9 +101,10 @@ public:
   NeuralNetwork();
   ~NeuralNetwork();
   void init_network();
-  void neural_update(std::vector<ram_value> inputs, input_name lastoutput);
-  precfloat compute_fitness(std::vector<ram_value> inputs);
-  void populate_inputs(std::vector<ram_value> rawinputs);
+  void neural_update(input_name lastoutput);
+  precfloat compute_fitness();
+  void compute_inputs(std::vector<ram_value> rawinputs);
+  void populate_neural_inputs();
   void neural_update_layer(unsigned li,int lastoutput,precfloat lr,precfloat target);
   precfloat activation(precfloat f);
   input_name neural_decide();

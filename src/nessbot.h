@@ -18,7 +18,7 @@ namespace nessbot {
 
 extern unsigned long p1_state_address;
 
-bool shouldExit;
+extern bool shouldExit;
 
 int run(int argc, char** argv);
 void exit_handler(int s);
