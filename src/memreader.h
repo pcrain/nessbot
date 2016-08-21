@@ -36,6 +36,12 @@ namespace nessbot {
     unsigned long address;
   };
 
+  union ram_value {
+    float f;
+    unsigned long u;
+    signed long s;
+  };
+
   extern unsigned long p1_state_address;
   extern std::vector<struct ram_address_info_raw> raw_addresses;
 
@@ -45,9 +51,9 @@ namespace nessbot {
   int init_memreader();
   int close_memreader();
   void precompute_offsets();
-  std::vector<unsigned long> get_game_state();
+  std::vector<ram_value> get_game_state();
   void monitor_game_state();
-  unsigned long get_game_byte(unsigned long address, int& errorflag);
+  ram_value get_game_byte(unsigned long address, int& errorflag);
 }
 
 #endif /* MEMREADER_H_ */

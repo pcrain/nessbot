@@ -43,12 +43,6 @@ struct nodeweight {
   unsigned b;
 };
 
-union ram_value {
-  float f;
-  unsigned long u;
-  signed long s;
-};
-
 struct computation {
   unsigned iarg1;
   unsigned iarg2;
@@ -92,9 +86,9 @@ public:
   NeuralNetwork();
   ~NeuralNetwork();
   void init_network();
-  void neural_update(std::vector<unsigned long> inputs, input_name lastoutput);
-  precfloat compute_fitness(std::vector<unsigned long> inputs);
-  void populate_inputs(std::vector<unsigned long> rawinputs);
+  void neural_update(std::vector<ram_value> inputs, input_name lastoutput);
+  precfloat compute_fitness(std::vector<ram_value> inputs);
+  void populate_inputs(std::vector<ram_value> rawinputs);
   void neural_update_layer(unsigned li,int lastoutput,precfloat lr,precfloat target);
   precfloat activation(precfloat f);
   input_name neural_decide();

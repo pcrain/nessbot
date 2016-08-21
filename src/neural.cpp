@@ -92,7 +92,7 @@ namespace nessbot {
     }
   }
 
-  void NeuralNetwork::neural_update(std::vector<unsigned long> inputs, input_name lastoutput) {
+  void NeuralNetwork::neural_update(std::vector<ram_value> inputs, input_name lastoutput) {
     precfloat fitness = compute_fitness(inputs);
     precfloat fd = fitness;
 
@@ -162,20 +162,16 @@ namespace nessbot {
     }
   }
 
-  precfloat NeuralNetwork::compute_fitness(std::vector<unsigned long> inputs) {
-    precfloat xd = hexfloat(inputs[0])/100;
-    precfloat yd = hexfloat(inputs[1])/100;
+  precfloat NeuralNetwork::compute_fitness(std::vector<ram_value> inputs) {
+    precfloat xd =  inputs[named_byte_map["P1 X"]].f/100;
+    precfloat yd =  inputs[named_byte_map["P1 Y"]].f/100;
+    precfloat oxd = inputs[named_byte_map["P2 X"]].f/100;
+    precfloat oyd = inputs[named_byte_map["P2 Y"]].f/100;
 
     // precfloat centerstagedistance = std::sqrt(xd*xd+yd*yd);
     precfloat centerstagedistance = xd;
 
-    // curprint(CYN,"D:       %f\n",centerstagedistance);
-
-    precfloat oxd = hexfloat(inputs[3])/100;
-    precfloat oyd = hexfloat(inputs[4])/100;
-
     precfloat opponentdistance = -(std::sqrt((xd-oxd)*(xd-oxd)+(yd-oyd)*(yd-oyd)));
-
     precfloat fitness = (
         10 * (centerstagedistance*centerstagedistance)
       // + 0  * (opponentdistance*opponentdistance)
@@ -188,12 +184,17 @@ namespace nessbot {
     return fitness;
   }
 
-  void NeuralNetwork::populate_inputs(std::vector<unsigned long> rawinputs) {
+  void NeuralNetwork::populate_inputs(std::vector<ram_value> rawinputs) {
     for (unsigned i = 0; i < rawinputs.size(); ++i) {
-      dolphin_values[i].u = rawinputs[i];
       unsigned slen = raw_addresses[i].name.size();
       raw_addresses[i].name.insert(slen,15-slen,' ');
-      curprint(YLW,"%s%u\n",raw_addresses[i].name.c_str(),rawinputs[i]);
+      if (raw_addresses[i].vtype == "int") {
+        dolphin_values[i].u = rawinputs[i].u;
+        curprint(YLW,"%s%u\n",raw_addresses[i].name.c_str(),rawinputs[i].u);
+      } else {
+        dolphin_values[i].f = rawinputs[i].f;
+        curprint(YLW,"%s%f\n",raw_addresses[i].name.c_str(),rawinputs[i].f);
+      }
     }
 
     for (unsigned i = 0; i < input_computations.size(); ++i) {
@@ -212,7 +213,7 @@ namespace nessbot {
       }
     }
 
-    p1state = rawinputs[named_byte_map["P1 State"]];
+    p1state = rawinputs[named_byte_map["P1 State"]].u;
 
     for (unsigned i = 0; i < output_indices.size(); ++i) {
       // nn_values[0][i] = dolphin_values[output_indices[i]].f;

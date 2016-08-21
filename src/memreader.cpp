@@ -25,7 +25,7 @@ std::vector<struct ram_address_info_raw> raw_addresses = {
   {"P1 State","int",  {"80453130", "2C", "10"}},
   {"P2 X","float",{"80453fc0", "2C", "B0"}},
   {"P2 Y","float",{"80453fc0", "2C", "B4"}},
-  {"P2 State","int",  {"80453F10", "2C", "10"}},
+  {"P2 State","int",  {"80453fc0", "2C", "10"}},
   {"P1 VX","float",{"80453130", "2C", "C8"}},
   {"P1 VY","float",{"80453130", "2C", "CC"}}
 };
@@ -67,16 +67,16 @@ int close_memreader() {
 }
 
 void monitor_game_state() {
-  std::vector<unsigned long> gs;
+  std::vector<ram_value> gs;
   while (true) {
     gs = get_game_state();
     curclear();
     for (unsigned i = 0; i < gs.size(); ++i) {
       if (byte_offsets[i].vtype == "float") {
-        curprint("%u: %f\n",i,hexfloat(gs[i]));
+        curprint("%u: %f\n",i,hexfloat(gs[i].f));
       }
       else if (byte_offsets[i].vtype == "int") {
-        curprint("%u: %lu\n",i,(unsigned long)gs[i]);
+        curprint("%u: %lu\n",i,gs[i].u);
       }
     }
     refresh();
@@ -121,13 +121,13 @@ void precompute_offsets() {
   named_byte_map = named_bytes;
 }
 
-std::vector<unsigned long> get_game_state() {
-  std::vector<unsigned long> gs;
+std::vector<ram_value> get_game_state() {
+  std::vector<ram_value> gs;
 
   if (! file_available(dolphin_memfile.c_str())) {
     return gs;
   }
-  unsigned long chunk;
+  ram_value chunk; chunk.u = 0;
   char ramdata[CHUNKSIZE];
   for (unsigned i = 0; i < byte_offsets.size(); ++i) {
     fseek(_dolphin_memory_descriptor,byte_offsets[i].address,SEEK_SET);
@@ -140,13 +140,13 @@ std::vector<unsigned long> get_game_state() {
   return gs;
 }
 
-unsigned long get_game_byte(unsigned long address, int& errorflag) {
-  unsigned long chunk = 0;
+ram_value get_game_byte(unsigned long address, int& errorflag) {
+  ram_value chunk; chunk.u = 0;
   char ramdata[CHUNKSIZE];
 
   if (! file_available(dolphin_memfile.c_str())) {
     errorflag = -1;
-    return 0;
+    return chunk;
   }
 
   fseek(_dolphin_memory_descriptor,0,SEEK_SET);  //Reset seek pointer

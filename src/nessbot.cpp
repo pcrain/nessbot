@@ -47,7 +47,7 @@ int run(int argc, char** argv) {
 
 int learn_to_melee() {
   NeuralNetwork nn;
-  std::vector<unsigned long> gs;
+  std::vector<ram_value> gs;
   input_name output = (input_name)(-1);
   int error = 0;
 
@@ -73,23 +73,23 @@ int learn_to_melee() {
 
     //Wait for next frame
     error = 0;
-    framenum = get_game_byte(GTADDRESS,error);
+    framenum = get_game_byte(GTADDRESS,error).u;
     if (error < 0) { return -3; }
     while( framenum == lastframe ) {
       usleep(10000);
-      framenum = get_game_byte(GTADDRESS,error);
+      framenum = get_game_byte(GTADDRESS,error).u;
       if (error < 0) { return -3; }
     }
 
     //Pause if helpless
-    p1state = get_game_byte(p1_state_address,error);
+    p1state = get_game_byte(p1_state_address,error).u;
     if (error < 0) { return -3; }
     while (true) {
       // if ( (p1state <= 12) || (p1state > 1000) || (p1state == 341) ) {
       // if ( (p1state <= 12) ) {
       if ( (p1state == 0) || (p1state == 12) ) {
         usleep(100000);
-        p1state = get_game_byte(p1_state_address,error);
+        p1state = get_game_byte(p1_state_address,error).u;
         if (error < 0) { return -3; }
       } else break;
     }
