@@ -20,12 +20,12 @@ enum input_name {
   inname_left,
   inname_right,
   inname_jump,
-  // inname_recover,
-  // inname_crouch,
-  // inname_smash_left,
-  // inname_smash_right,
-  // inname_smash_up,
-  // inname_smash_down,
+  inname_recover,
+  inname_crouch,
+  inname_smash_left,
+  inname_smash_right,
+  inname_smash_up,
+  inname_smash_down,
   inname_end
 };
 
@@ -34,12 +34,12 @@ const std::string inname_string[inname_end+1] = {
   "left        ",
   "right       ",
   "jump        ",
-  // "recover     ",
-  // "crouch      ",
-  // "smash_left  ",
-  // "smash_right ",
-  // "smash_up    ",
-  // "smash_down  ",
+  "recover     ",
+  "crouch      ",
+  "smash_left  ",
+  "smash_right ",
+  "smash_up    ",
+  "smash_down  ",
   "end"
 };
 

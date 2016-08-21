@@ -1,7 +1,8 @@
 #include "neural.h"
+#include "memreader.h"
 
 namespace nessbot {
-  const unsigned NUM_INPUTS = 8;
+  const unsigned NUM_INPUTS = 7;
 
   NeuralNetwork::NeuralNetwork() {
     if (file_available("./_default_config.json")) {
@@ -188,49 +189,40 @@ namespace nessbot {
   }
 
   void NeuralNetwork::populate_inputs(std::vector<unsigned long> rawinputs) {
-    const int svs[] {358,359,362,363}; //semivulnstates
-    const int asize = sizeof(svs) / sizeof(int);
+    for (unsigned i = 0; i < rawinputs.size(); ++i) {
+      dolphin_values[i].u = rawinputs[i];
+      unsigned slen = raw_addresses[i].name.size();
+      raw_addresses[i].name.insert(slen,15-slen,' ');
+      curprint(YLW,"%s%u\n",raw_addresses[i].name.c_str(),rawinputs[i]);
+    }
 
-    precfloat xpos  = hexfloat(rawinputs[0]);
-    precfloat ypos  = hexfloat(rawinputs[1]);
-    p1state     = rawinputs[2];
-    precfloat oxpos = hexfloat(rawinputs[3]);
-    precfloat oypos = hexfloat(rawinputs[4]);
-    precfloat xv    = hexfloat(rawinputs[6]);
-    precfloat yv    = hexfloat(rawinputs[7]);
-
-    bool vulnerable = false;
-    for (int i = 0; i < asize; ++i) {
-      if (p1state == svs[i]) {
-        vulnerable = true;
-        break;
+    for (unsigned i = 0; i < input_computations.size(); ++i) {
+      unsigned ir = input_computations[i].iret;
+      float v1 = dolphin_values[input_computations[i].iarg1].f;
+      float v2 = dolphin_values[input_computations[i].iarg2].f;
+      switch(input_computations[i].mem_op) {
+        case mem_gt:
+          dolphin_values[ir].f = ((v1 >  v2) ? 1 : -1); break;
+        case mem_eq:
+          dolphin_values[ir].f = ((v1 == v2) ? 1 : -1); break;
+        case mem_pos:
+          dolphin_values[ir].f = ((v1 >  0 ) ? 1 : -1); break;
+        case mem_zero:
+          dolphin_values[ir].f = ((v1 == 0 ) ? 1 : -1); break;
       }
     }
 
-    nn_values[0][0] = signof(xpos);                                  //"P1 X         ",
-    nn_values[0][1] = ((ypos >= 0) ? 1 : -1);                        //"P1 Y         ",
-    nn_values[0][2] = signof(oxpos-xpos);                            //"P2-P1 X      ",
-    nn_values[0][3] = signof(oypos-ypos);                            //"P2-P1 Y      ",
-    nn_values[0][4] = ((xv >= 0) ? 1 : -1);                          //"P1 Xv        ",
-    nn_values[0][5] = ((xv == 0) ? 1 : -1);                          //"P1 Static    ",
-    nn_values[0][6] = (vulnerable ? 1 : -1);                         //"Helpless     ",
-    nn_values[0][7] = ((signof(xv) == signof(oxpos-xpos)) ? 1 : -1); //"Toward P2    ",
+    p1state = rawinputs[named_byte_map["P1 State"]];
 
-    const char* NAMES[NUM_INPUTS] = {
-      "P1 X         ",
-      "P1 Y         ",
-      "P2-P1 X      ",
-      "P2-P1 Y      ",
-      "P1 Xv        ",
-      "P1 Static    ",
-      "Helpless     ",
-      "Toward P2    "
-    };
+    for (unsigned i = 0; i < output_indices.size(); ++i) {
+      // nn_values[0][i] = dolphin_values[output_indices[i]].f;
+      nn_values[0][i] = (dolphin_values[output_indices[i]].f)/2+0.5f;
+    }
 
-    for (unsigned i = 0; i < NUM_INPUTS; ++ i) {
-      // nn_values[0][i] = 0.5f; //TODO: Nothing updates
-      nn_values[0][i] = (nn_values[0][i]/2)+0.5f;
-      curprint(MGN,"%s%f\n",NAMES[i],nn_values[0][i]);
+    for (unsigned i = 0; i < output_indices.size(); ++i) {
+      unsigned slen = output_names[i].size();
+      output_names[i].insert(slen,15-slen,' ');
+      curprint(MGN,"%s%f\n",output_names[i].c_str(),nn_values[0][i]);
     }
     curprint(RED,"P1 State     %u\n",p1state);
   }
@@ -372,6 +364,60 @@ namespace nessbot {
     root["mutation_rate"]     = mutation_rate;
     root["chaos_rate"]        = chaos_rate;
 
+    root["raw_addresses"] = Json::Value(Json::arrayValue);
+    for (unsigned i = 0; i < raw_addresses.size(); ++i) {
+      root["raw_addresses"][i]["friendly_name"] = raw_addresses[i].name;
+      root["raw_addresses"][i]["type"] = raw_addresses[i].vtype;
+      root["raw_addresses"][i]["address_strings"] = Json::Value(Json::arrayValue);
+      for (unsigned j = 0; j < raw_addresses[i].address_strings.size(); ++j) {
+        root["raw_addresses"][i]["address_strings"][j] = raw_addresses[i].address_strings[j];
+      }
+    }
+
+    root["computations"] = Json::Value(Json::arrayValue);
+
+    root["computations"][0]["arg1"]      = "P1 X";
+    root["computations"][0]["arg2"]      = "0";
+    root["computations"][0]["name"]      = "P1 X+";
+    root["computations"][0]["operation"] = ">0";
+    root["computations"][0]["output"]    = true;
+
+    root["computations"][1]["arg1"]      = "P1 Y";
+    root["computations"][1]["arg2"]      = "0";
+    root["computations"][1]["name"]      = "P1 Y+";
+    root["computations"][1]["operation"] = ">0";
+    root["computations"][1]["output"]    = true;
+
+    root["computations"][2]["arg1"]      = "P2 X";
+    root["computations"][2]["arg2"]      = "P1 X";
+    root["computations"][2]["name"]      = "P2>P1 X";
+    root["computations"][2]["operation"] = ">";
+    root["computations"][2]["output"]    = true;
+
+    root["computations"][3]["arg1"]      = "P2 Y";
+    root["computations"][3]["arg2"]      = "P1 Y";
+    root["computations"][3]["name"]      = "P2>P1 Y";
+    root["computations"][3]["operation"] = ">";
+    root["computations"][3]["output"]    = true;
+
+    root["computations"][4]["arg1"]      = "P1 VX";
+    root["computations"][4]["arg2"]      = "0";
+    root["computations"][4]["name"]      = "P1 VX+";
+    root["computations"][4]["operation"] = ">0";
+    root["computations"][4]["output"]    = true;
+
+    root["computations"][5]["arg1"]      = "P1 VX";
+    root["computations"][5]["arg2"]      = "0";
+    root["computations"][5]["name"]      = "P1 Static";
+    root["computations"][5]["operation"] = "=0";
+    root["computations"][5]["output"]    = true;
+
+    root["computations"][6]["arg1"]      = "P1 VX+";
+    root["computations"][6]["arg2"]      = "P2>P1 X";
+    root["computations"][6]["name"]      = "Toward P2";
+    root["computations"][6]["operation"] = "=";
+    root["computations"][6]["output"]    = true;
+
     std::ofstream ofile;
     ofile.open(fname);
     Json::StyledWriter styledWriter;
@@ -399,6 +445,64 @@ namespace nessbot {
     punish_rate        = root["punish_rate"].asDouble();
     mutation_rate      = root["mutation_rate"].asDouble();
     chaos_rate         = root["chaos_rate"].asDouble();
+
+    unsigned rawsize = root["raw_addresses"].size();
+
+    raw_addresses.clear();
+    for (unsigned i = 0; i < rawsize; ++i) {
+      std::vector<std::string> address_strings;
+      for (unsigned j = 0; j < root["raw_addresses"][i]["address_strings"].size(); ++j) {
+        address_strings.push_back(root["raw_addresses"][i]["address_strings"][j].asString());
+      }
+      raw_addresses.push_back({
+        root["raw_addresses"][i]["friendly_name"].asString(),
+        root["raw_addresses"][i]["type"].asString(),
+        address_strings
+      });
+    }
+
+    precompute_offsets();  //Need to recompute RAM offsets for memreader
+
+    ram_value zero_value; zero_value.f = 0;  //Zero value
+
+    input_computations.clear();
+    for (unsigned i = 0; i < root["computations"].size(); ++i) {
+      unsigned iarg1, iarg2;
+      mem_operation mem_op = MEM_OP_MAP[root["computations"][i]["operation"].asString()];
+
+      std::string narg1 = root["computations"][i]["arg1"].asString();
+      if (named_byte_map.count(narg1) > 0) {
+        iarg1 = named_byte_map[narg1];
+      } else {
+        rawsize += 1;
+        named_byte_map[narg1] = rawsize;
+        iarg1 = rawsize;
+      }
+
+      std::string narg2 = root["computations"][i]["arg2"].asString();
+      if (named_byte_map.count(narg2) > 0) {
+        iarg2 = named_byte_map[narg2];
+      } else {
+        rawsize += 1;
+        named_byte_map[narg2] = rawsize;
+        iarg2 = rawsize;
+      }
+
+      rawsize += 1;
+      named_byte_map[root["computations"][i]["name"].asString()] = rawsize;
+
+      dolphin_values.clear();
+      dolphin_values.resize(rawsize,zero_value);
+
+      if (root["computations"][i]["output"].asBool()) {
+        output_indices.push_back(rawsize);
+        output_names.push_back(root["computations"][i]["name"].asString());
+      }
+
+      input_computations.push_back( {iarg1,iarg2,rawsize,mem_op} );
+      // curprint("%u,%u,%u,%u\n",iarg1,iarg2,rawsize,mem_op); refresh(); fsleep(60);
+    }
+    // fsleep(60*60*60);
   }
 
 }

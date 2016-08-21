@@ -1,4 +1,5 @@
 RM := rm -rf
+MKDIR_P = mkdir -p
 
 UNUSED := -Wno-unused-variable
 
@@ -22,7 +23,6 @@ build/main.d
 
 LIBS := -ljsoncpp -lncurses
 
-MKDIR_P = mkdir -p
 OUT_DIR = build
 
 all: directories nessbot
@@ -42,7 +42,7 @@ build/%.o: ./src/%.cpp
 	@echo ' '
 
 clean:
-	-$(RM) $(OBJS)$(C++_DEPS) ./cnessbot ./_default_config.json
+	-$(RM) $(OBJS)$(C++_DEPS) ./cnessbot
 	-@echo ' '
 
 directories: ${OUT_DIR}

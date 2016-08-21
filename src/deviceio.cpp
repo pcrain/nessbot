@@ -112,12 +112,12 @@ int act(input_name in) {
     case inname_left        : device_write(input_left);        break;
     case inname_right       : device_write(input_right);       break;
     case inname_jump        : device_write(input_jump);        break;
-    // case inname_recover     : device_write(input_recover);     break;
-    // case inname_crouch      : device_write(input_crouch);      break;
-    // case inname_smash_left  : device_write(input_smash_left);  break;
-    // case inname_smash_right : device_write(input_smash_right); break;
-    // case inname_smash_up    : device_write(input_smash_up);    break;
-    // case inname_smash_down  : device_write(input_smash_down);  break;
+    case inname_recover     : device_write(input_recover);     break;
+    case inname_crouch      : device_write(input_crouch);      break;
+    case inname_smash_left  : device_write(input_smash_left);  break;
+    case inname_smash_right : device_write(input_smash_right); break;
+    case inname_smash_up    : device_write(input_smash_up);    break;
+    case inname_smash_down  : device_write(input_smash_down);  break;
     default                 : device_write(input_neutral);     break;
   }
   return 0;

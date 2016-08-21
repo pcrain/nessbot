@@ -64,7 +64,7 @@ int learn_to_melee() {
       nn.printoutputs(output);
     }
 
-    //Necide and act upon new action
+    //Decide and act upon new action
     nn.populate_inputs(gs);
     output = nn.neural_decide();
     error = act(output);

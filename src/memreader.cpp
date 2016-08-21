@@ -5,8 +5,35 @@ namespace nessbot {
 unsigned int dolphin_pid;
 FILE* _dolphin_memory_descriptor;
 std::vector<struct ram_address_info> byte_offsets;
+std::map<std::string, unsigned> named_byte_map;
 unsigned long p1_state_address = 0;
 std::string dolphin_memfile;
+
+//Can add 0xB0 to get player entity data
+//(see raw_addresses below)
+const unsigned long PLAYERENTITY[4] = {
+  hexint("80453080"),
+  hexint("80453F10"),
+  hexint("80454DA0"),
+  hexint("80455C30")
+};
+
+//Backup for if config file fails to load
+std::vector<struct ram_address_info_raw> raw_addresses = {
+  {"P1 X","float",{"80453130", "2C", "B0"}},
+  {"P1 Y","float",{"80453130", "2C", "B4"}},
+  {"P1 State","int",  {"80453130", "2C", "10"}},
+  {"P2 X","float",{"80453fc0", "2C", "B0"}},
+  {"P2 Y","float",{"80453fc0", "2C", "B4"}},
+  {"P2 State","int",  {"80453F10", "2C", "10"}},
+  {"P1 VX","float",{"80453130", "2C", "C8"}},
+  {"P1 VY","float",{"80453130", "2C", "CC"}}
+};
+
+//Alternate backup
+// std::vector<struct ram_address_info_raw> raw_addresses = {
+//   {"Dummy   ","float",{"00000000"}}
+// };
 
 int init_memreader() {
   char buf[512];
@@ -27,18 +54,7 @@ int init_memreader() {
     return -2; //Not running as root
   }
 
-  std::vector<struct ram_address_info_raw> raw_addresses = {
-    {"P1 X    ","float",{PLAYERENTITY[0] + std::stoul("B0",nullptr,16), hexint("2C"), hexint("B0")}},
-    {"P1 Y    ","float",{PLAYERENTITY[0] + std::stoul("B0",nullptr,16), hexint("2C"), hexint("B4")}},
-    {"P1 State","int",  {PLAYERENTITY[0] + std::stoul("B0",nullptr,16), hexint("2C"), hexint("10")}},
-    {"P2 X    ","float",{PLAYERENTITY[1] + std::stoul("B0",nullptr,16), hexint("2C"), hexint("B0")}},
-    {"P2 Y    ","float",{PLAYERENTITY[1] + std::stoul("B0",nullptr,16), hexint("2C"), hexint("B4")}},
-    {"P2 State","int",  {PLAYERENTITY[1] + std::stoul("B0",nullptr,16), hexint("2C"), hexint("10")}},
-    {"P1 VX   ","float",{PLAYERENTITY[0] + std::stoul("B0",nullptr,16), hexint("2C"), hexint("C8")}},
-    {"P1 VY   ","float",{PLAYERENTITY[0] + std::stoul("B0",nullptr,16), hexint("2C"), hexint("CC")}}
-  };
-
-  byte_offsets = precompute_offsets(raw_addresses);
+  precompute_offsets();
 
   return 0;
 }
@@ -68,8 +84,9 @@ void monitor_game_state() {
   }
 }
 
-std::vector<struct ram_address_info> precompute_offsets(std::vector<struct ram_address_info_raw> raw_addresses) {
+void precompute_offsets() {
   std::vector<struct ram_address_info> computed_address;
+  std::map<std::string, unsigned> named_bytes;
 
   for (unsigned i = 0; i < raw_addresses.size(); ++i) {
     bool first = true;
@@ -81,7 +98,7 @@ std::vector<struct ram_address_info> precompute_offsets(std::vector<struct ram_a
       if (!first) {
         start = RAMOFFSET + chunk;
       }
-      start += raw_addresses[i].address_strings[j];
+      start += hexint(raw_addresses[i].address_strings[j]);
       if (start < RAMOFFSET) {
         start = RAMOFFSET; //Dummy value for invalid memory address
         break;
@@ -97,9 +114,11 @@ std::vector<struct ram_address_info> precompute_offsets(std::vector<struct ram_a
       p1_state_address = start;
     }
     computed_address.push_back({raw_addresses[i].name,raw_addresses[i].vtype,start});
+    named_bytes[raw_addresses[i].name] = i;
   }
   // fsleep(6000);
-  return computed_address;
+  byte_offsets = computed_address;
+  named_byte_map = named_bytes;
 }
 
 std::vector<unsigned long> get_game_state() {

@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <vector>
+#include <map>
 #include <string>
 #include <string.h>
 
@@ -20,22 +21,13 @@
 
 namespace nessbot {
 
-  extern unsigned long p1_state_address;
-
   const unsigned long RAMOFFSET = std::stoul("2500000000", nullptr, 16);
   const unsigned long GTADDRESS = RAMOFFSET + std::stoul("80479D60", nullptr, 16);
-
-  const unsigned long PLAYERENTITY[4] = {
-    std::stoul("80453080", nullptr, 16),
-    std::stoul("80453F10", nullptr, 16),
-    std::stoul("80454DA0", nullptr, 16),
-    std::stoul("80455C30", nullptr, 16)
-  };
 
   struct ram_address_info_raw {
     std::string name;
     std::string vtype;
-    std::vector<unsigned long> address_strings;
+    std::vector<std::string> address_strings;
   };
 
   struct ram_address_info {
@@ -44,9 +36,15 @@ namespace nessbot {
     unsigned long address;
   };
 
+  extern unsigned long p1_state_address;
+  extern std::vector<struct ram_address_info_raw> raw_addresses;
+
+  extern std::vector<struct ram_address_info> byte_offsets;
+  extern std::map<std::string, unsigned> named_byte_map;
+
   int init_memreader();
   int close_memreader();
-  std::vector<struct ram_address_info> precompute_offsets(std::vector<struct ram_address_info_raw> raw_addresses);
+  void precompute_offsets();
   std::vector<unsigned long> get_game_state();
   void monitor_game_state();
   unsigned long get_game_byte(unsigned long address, int& errorflag);

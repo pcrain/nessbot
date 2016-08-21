@@ -6,6 +6,7 @@
 #include <iostream>
 #include <unistd.h>
 #include <vector>
+#include <map>
 #include <string>
 #include <random>
 #include <json/value.h>
@@ -15,15 +16,44 @@
 
 #include "deviceio.h"
 #include "termoutput.h"
+#include "memreader.h"
 
 namespace nessbot {
 
 typedef double precfloat;
 
+enum mem_operation {
+  mem_gt,
+  mem_eq,
+  mem_pos,
+  mem_zero,
+};
+
+//TODO: compiler complains when this is made constant
+static std::map<std::string,mem_operation> MEM_OP_MAP = {
+  {">", mem_gt  },
+  {"=", mem_eq  },
+  {">0",mem_pos },
+  {"=0",mem_zero}
+};
+
 struct nodeweight {
   unsigned a;
   precfloat w;
   unsigned b;
+};
+
+union ram_value {
+  float f;
+  unsigned long u;
+  signed long s;
+};
+
+struct computation {
+  unsigned iarg1;
+  unsigned iarg2;
+  unsigned iret;
+  mem_operation mem_op;
 };
 
 class NeuralNetwork {
@@ -53,6 +83,11 @@ private:
   int* history_value;
   int* history_weight;
   int (*history_count)[3];
+
+  std::vector<ram_value> dolphin_values;
+  std::vector<unsigned> output_indices;
+  std::vector<std::string> output_names;
+  std::vector<computation> input_computations;
 public:
   NeuralNetwork();
   ~NeuralNetwork();
