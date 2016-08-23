@@ -39,7 +39,8 @@ const struct input_combo input_smash_down    = {136,235,0,0,0,1};
 static int _devince_input_descriptor = -1;
 
 int init_device() {
-  _devince_input_descriptor = open(EVDEVICE, O_RDWR | O_NOCTTY | O_NDELAY | O_NONBLOCK);
+  // _devince_input_descriptor = open(EVDEVICE, O_RDWR | O_NOCTTY | O_NDELAY | O_NONBLOCK);
+  _devince_input_descriptor = init_virtual_device();
   if (_devince_input_descriptor == -1) {
     // perror("open_port: Unable to open /dev/input/event14 - ");
     close(_devince_input_descriptor);
@@ -93,7 +94,8 @@ int device_test() {
 }
 
 int close_device() {
-  close(_devince_input_descriptor);
+  // close(_devince_input_descriptor);
+  close_virtual_device();
   return 0;
 }
 

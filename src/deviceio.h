@@ -12,6 +12,7 @@
 #include <sys/time.h>
 
 #include "termoutput.h"
+#include "virtualinput.h"
 
 namespace nessbot {
 

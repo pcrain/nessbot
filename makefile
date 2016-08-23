@@ -7,6 +7,7 @@ OBJS += \
 build/nessbot.o \
 build/neural.o \
 build/termoutput.o \
+build/virtualinput.o \
 build/deviceio.o \
 build/memreader.o \
 build/util.o \
@@ -16,6 +17,7 @@ CPP_DEPS += \
 build/nessbot.d \
 build/neural.d \
 build/termoutput.d \
+build/virtualinput.d \
 build/deviceio.d \
 build/memreader.d \
 build/util.d \

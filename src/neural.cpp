@@ -101,7 +101,7 @@ namespace nessbot {
       if (fd >= 0 && dd >= 0) { //If we're not improving and showing no signs of improving in the future
         last_fitness_dd = -1;
         neural_update_layer(num_middle_layers+1,lastoutput,punish_rate,0);
-      } else if (fd < 0 || dd < 0) { //If we're at least improving
+      } else if (fd < 0) { //If we're at least improving
         last_fitness_dd = 1;
         neural_update_layer(num_middle_layers+1,lastoutput,learn_rate,1);
       } else {
@@ -345,10 +345,10 @@ namespace nessbot {
     root["history_length"]    = 100000;
     root["num_middle_layers"] = 1;
     root["middle_layer_size"] = 50000;
-    root["learn_rate"]        = 0.0001;
-    root["punish_rate"]       = 0.0001;
+    root["learn_rate"]        = 0.01;
+    root["punish_rate"]       = 0.01;
     root["mutation_rate"]     = 0.01;
-    root["chaos_rate"]        = 0.05;
+    root["chaos_rate"]        = 0.0;
     root["weights_file"]      = "";
 
     root["raw_addresses"] = Json::Value(Json::arrayValue);
